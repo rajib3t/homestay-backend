@@ -1,0 +1,51 @@
+from datetime import datetime, timedelta
+from jose import jwt
+import bcrypt
+from app.core.config import settings
+
+class JWTHandler:
+
+    @staticmethod
+    def create_access_token(data: dict, additional_claims: dict = None):
+        to_encode = data.copy()
+        if additional_claims:
+            to_encode.update(additional_claims)
+        
+        expire = datetime.utcnow() + timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+        to_encode.update({"exp": expire, "type": "access"})
+        encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        return encoded_jwt
+
+    @staticmethod
+    def create_refresh_token(data: dict, additional_claims: dict = None):
+        to_encode = data.copy()
+        if additional_claims:
+            to_encode.update(additional_claims)
+        
+        expire = datetime.utcnow() + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        to_encode.update({"exp": expire, "type": "refresh"})
+        encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        return encoded_jwt, expire
+
+    @staticmethod
+    def decode_token(token: str):
+        return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+
+class PasswordHasher:
+
+    @staticmethod
+    def hash_password(password: str) -> str:
+        pwd_bytes = password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(pwd_bytes, salt)
+        return hashed.decode('utf-8')
+
+    @staticmethod
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        password_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)

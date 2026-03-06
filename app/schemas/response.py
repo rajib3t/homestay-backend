@@ -5,7 +5,11 @@ class BaseResponse(BaseModel):
     message: str
 
 
-class PaginationResponse(BaseResponse):
+class PaginationMeta(BaseModel):
     total: int
     page: int
     size: int
+
+class PaginationResponse(BaseResponse):
+    meta: PaginationMeta
+    

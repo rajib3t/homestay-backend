@@ -40,3 +40,26 @@ class LocationService(BaseService):
         # convert ObjectId to string for API responses
         doc["_id"] = str(doc["_id"])
         return doc
+
+    async def list_countries(self, page: int = 1, size: int = 10):
+        # basic validation
+        try:
+            page = int(page)
+            size = int(size)
+        except Exception:
+            raise AppException(400, "Invalid pagination parameters")
+
+        if page < 1 or size < 1:
+            raise AppException(400, "page and size must be positive integers")
+
+        skip = (page - 1) * size
+
+        cursor = self.db.countries.find().skip(skip).limit(size)
+        items = []
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            items.append(doc)
+
+        total = await self.db.countries.count_documents({})
+
+        return {"items": items, "total": total, "page": page, "size": size}

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from pydantic import ConfigDict
 from app.schemas.response import BaseResponse
-
+from app.schemas.response import PaginationResponse
 class Location(BaseModel):
     name: str
     city: str
@@ -27,3 +27,8 @@ class CountryOut(Country):
 
 class CountryResponse(BaseResponse):
     data: CountryOut
+
+
+class CountriesResponse(PaginationResponse):
+    data: list[CountryOut] = Field(default_factory=list)
+    

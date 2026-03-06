@@ -161,5 +161,6 @@ async def refresh_token(
         "message": "Token refreshed successfully",
         "data": {
             "access_token": new_access_token,
+            "refresh_token": new_refresh_token_obj.token,
         },
     }

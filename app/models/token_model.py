@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 
 
@@ -18,7 +18,7 @@ class Token:
     COLLECTION_NAME = "tokens"
     
     def __init__(self, user_id, token, token_type=TokenType.REFRESH, 
-                 is_revoked=False, expires_at=None, _id=None, created_at=None, additional_claims=None):
+                 is_revoked=False, expires_at=None, absolute_expiry=None, _id=None, created_at=None, additional_claims=None):
         """
         Initialize a Token object.
         
@@ -38,7 +38,8 @@ class Token:
         self.token_type = token_type
         self.is_revoked = is_revoked
         self.expires_at = expires_at
-        self.created_at = created_at or datetime.utcnow()
+        self.absolute_expiry = absolute_expiry
+        self.created_at = created_at or datetime.now(timezone.utc)
         self.additional_claims = additional_claims or {}
 
     def to_dict(self):
@@ -50,6 +51,7 @@ class Token:
             "token_type": self.token_type,
             "is_revoked": self.is_revoked,
             "expires_at": self.expires_at,
+            "absolute_expiry": self.absolute_expiry,
             "created_at": self.created_at,
             "additional_claims": self.additional_claims
         }
@@ -62,6 +64,7 @@ class Token:
             "token_type": self.token_type,
             "is_revoked": self.is_revoked,
             "expires_at": self.expires_at,
+            "absolute_expiry": self.absolute_expiry,
             "created_at": self.created_at,
             "additional_claims": self.additional_claims
         }
@@ -76,14 +79,23 @@ class Token:
         """Create Token object from MongoDB document."""
         if not doc:
             return None
-            
+        def _to_aware(dt):
+            if dt is None:
+                return None
+            if not isinstance(dt, datetime):
+                return dt
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+
         return Token(
             user_id=doc.get("user_id"),
             token=doc.get("token"),
             token_type=doc.get("token_type"),
             is_revoked=doc.get("is_revoked", False),
-            expires_at=doc.get("expires_at"),
+            expires_at=_to_aware(doc.get("expires_at")),
+            absolute_expiry=_to_aware(doc.get("absolute_expiry")),
             _id=doc.get("_id"),
-            created_at=doc.get("created_at"),
+            created_at=_to_aware(doc.get("created_at")),
             additional_claims=doc.get("additional_claims", {})
         )

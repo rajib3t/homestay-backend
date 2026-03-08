@@ -1,6 +1,6 @@
 import pytest
 from types import SimpleNamespace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import asyncio
 
@@ -42,7 +42,7 @@ class FakeDB(dict):
 @pytest.mark.asyncio
 async def test_create_verify_revoke(monkeypatch):
     # Patch JWTHandler.create_refresh_token and decode_token
-    monkeypatch.setattr("app.services.token_service.JWTHandler.create_refresh_token", lambda data, additional_claims=None: ("token123", datetime.utcnow() + timedelta(days=7)))
+    monkeypatch.setattr("app.services.token_service.JWTHandler.create_refresh_token", lambda data, additional_claims=None, expires_at=None: ("token123", datetime.now(timezone.utc) + timedelta(days=7)))
     monkeypatch.setattr("app.services.token_service.JWTHandler.decode_token", lambda token: {"sub": "1", "type": "refresh"})
 
     db = FakeDB()

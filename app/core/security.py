@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt
 import bcrypt
 from app.core.config import settings
@@ -11,7 +11,7 @@ class JWTHandler:
         if additional_claims:
             to_encode.update(additional_claims)
         
-        expire = datetime.utcnow() + timedelta(
+        expire = datetime.now(timezone.utc) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
         to_encode.update({"exp": expire, "type": "access"})
@@ -19,14 +19,17 @@ class JWTHandler:
         return encoded_jwt
 
     @staticmethod
-    def create_refresh_token(data: dict, additional_claims: dict = None):
+    def create_refresh_token(data: dict, additional_claims: dict = None, expires_at=None):
         to_encode = data.copy()
         if additional_claims:
             to_encode.update(additional_claims)
-        
-        expire = datetime.utcnow() + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
-        )
+        if expires_at is None:
+            expire = datetime.now(timezone.utc) + timedelta(
+                days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+            )
+        else:
+            expire = expires_at
+
         to_encode.update({"exp": expire, "type": "refresh"})
         encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
         return encoded_jwt, expire

@@ -10,6 +10,7 @@ class Location(BaseModel):
 class City(BaseModel):
     name: str
     country: str
+    is_popular: bool = False
     locations: list[Location] = Field(default_factory=list)
 
 class Country(BaseModel):
@@ -31,4 +32,8 @@ class CountryResponse(BaseResponse):
 
 class CountriesResponse(PaginationResponse):
     data: list[CountryOut] = Field(default_factory=list)
+
+
+class CityResponse(BaseResponse):
+    data: City
     

@@ -1,15 +1,19 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
+from typing import Annotated, Optional
 
+UppercaseStr = Annotated[str, AfterValidator(lambda v: v.upper())]
 class CountryCreate(BaseModel):
     name: str
-    code: str = Field(..., min_length=2, max_length=3, uppercase=True)
+    code: UppercaseStr = Field(..., min_length=2, max_length=3)
     dial_code: int = Field(..., ge=1, le=999)
     status: bool = True
 
 class CityCreate(BaseModel):
     name: str
     country: str
+    is_popular: bool = False
+    image: Optional[str] = None
+
 
 class LocationCreate(BaseModel):
     name: str
@@ -18,15 +22,18 @@ class LocationCreate(BaseModel):
 
 class CountryUpdate(BaseModel):
     name: Optional[str] = None
-    code: Optional[str] = Field(None, min_length=2, max_length=3, uppercase=True)
+    code: Optional[UppercaseStr] = Field(None, min_length=2, max_length=3)
     dial_code: Optional[int] = Field(None, ge=1, le=999)
-    status: Optional[bool] = None
+    
 class CityUpdate(BaseModel):
+
     name: Optional[str] = None
     country: Optional[str] = None
-
+    is_popular: Optional[bool] = None
+    image: Optional[str] = None
 class LocationUpdate(BaseModel):
     name: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
+    image: Optional[str] = None
 

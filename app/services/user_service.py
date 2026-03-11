@@ -17,7 +17,8 @@ class UserService(BaseService):
         return str(result.inserted_id)
 
     async def get_user(self, user_id: str):
-        user = await self.db.users.find_one({"_id": ObjectId(user_id)})
+        _id = ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id
+        user = await self.db.users.find_one({"_id": _id})
         if not user:
             raise AppException(404, "User not found")
         user["_id"] = str(user["_id"])
@@ -29,15 +30,17 @@ class UserService(BaseService):
         
         # Check if email is being updated and if it's already taken
         if "email" in update_data:
+            _id = ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id
             existing = await self.db.users.find_one({
                 "email": update_data["email"],
-                "_id": {"$ne": ObjectId(user_id)}
+                "_id": {"$ne": _id}
             })
             if existing:
                 raise AppException(400, "Email already exists")
 
+        _id = ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id
         result = await self.db.users.update_one(
-            {"_id": ObjectId(user_id)},
+            {"_id": _id},
             {"$set": update_data}
         )
         

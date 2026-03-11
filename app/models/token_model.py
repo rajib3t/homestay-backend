@@ -33,7 +33,13 @@ class Token:
             additional_claims (dict, optional): Additional claims for the token
         """
         self._id = _id
-        self.user_id = user_id if isinstance(user_id, ObjectId) else ObjectId(user_id)
+        # Accept string ids (for tests/fake DB) or convert valid ObjectId hex strings
+        if isinstance(user_id, ObjectId):
+            self.user_id = user_id
+        elif isinstance(user_id, str) and ObjectId.is_valid(user_id):
+            self.user_id = ObjectId(user_id)
+        else:
+            self.user_id = user_id
         self.token = token
         self.token_type = token_type
         self.is_revoked = is_revoked

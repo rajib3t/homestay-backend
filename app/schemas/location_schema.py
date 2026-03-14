@@ -13,8 +13,8 @@ class Location(BaseModel):
 class LocationOut(BaseModel):
     id: str = Field(..., alias="_id")
     name: str
-    city: str
-    country: str
+    city: Optional[str] = None
+    country: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -55,6 +55,7 @@ class CityOut(BaseModel):
     image: Optional[str] = None
     is_popular: bool = False
     location_count: int = 0
+    locations: list[LocationOut] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
 

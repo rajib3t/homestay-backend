@@ -4,27 +4,26 @@ import logging
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from bson import ObjectId
-from typing import Optional
+from typing import Optional,Dict
 import re
 import uuid
 from app.services.storage_service import StorageService
 logger = logging.getLogger(__name__)
 class LocationService(BaseService):
-    async def create_country(self, country_data: dict):
-        existing = await self.db.countries.find_one({"name": country_data["name"]})
-            # Normalize code to uppercase
-            
+    async def create_country(self, country_data: Dict):
+        # Normalize values
+        country_data["name"] = country_data["name"].strip()
+        country_data["code"] = country_data["code"].upper().strip()
 
-            # Check uniqueness by name, code, or dial_code
+        # Check uniqueness
         existing = await self.db.countries.find_one({
             "$or": [
                 {"name": country_data["name"]},
-                {"code": country_data["code"]},
-                
+                {"code": country_data["code"]}
             ]
         })
+
         if existing:
-            # Determine which field conflicts for clearer error
             if existing.get("name") == country_data["name"]:
                 raise AppException(
                     status_code=409,
@@ -32,6 +31,7 @@ class LocationService(BaseService):
                     error_code="COUNTRY_NAME_EXISTS",
                     field="name"
                 )
+
             if existing.get("code") == country_data["code"]:
                 raise AppException(
                     status_code=409,
@@ -39,10 +39,10 @@ class LocationService(BaseService):
                     error_code="COUNTRY_CODE_EXISTS",
                     field="code"
                 )
-            
-        
-        
+
+        # Insert country
         result = await self.db.countries.insert_one(country_data)
+
         return str(result.inserted_id)
     
     async def update_country(self, country_id: str, update_data: dict):
@@ -52,15 +52,30 @@ class LocationService(BaseService):
 
         existing = await self.db.countries.find_one({"_id": ObjectId(country_id)})
         if not existing:
-            raise HTTPException(status_code=404, detail="Country not found")
+            raise AppException(
+                    status_code=404,
+                    message="Country not found",
+                    error_code="COUNTRY_NOT_FOUND",
+                    field="country"
+                )
 
         # Check for uniqueness of name and code
         if "name" in update_data and update_data["name"] != existing["name"]:
             if await self.db.countries.find_one({"name": update_data["name"]}):
-                raise HTTPException(status_code=400, detail="Country with this name already exists")
+                raise AppException(
+                    status_code=409,
+                    message="Country with this name already exists",
+                    error_code="COUNTRY_NAME_EXISTS",
+                    field="name"
+                )
         if "code" in update_data and update_data["code"] != existing["code"]:
             if await self.db.countries.find_one({"code": update_data["code"]}):
-                raise HTTPException(status_code=400, detail="Country with this code already exists")
+                raise AppException(
+                    status_code=409,
+                    message="Country with this code already exists",
+                    error_code="COUNTRY_CODE_EXISTS",
+                    field="code"
+                )
 
         await self.db.countries.update_one({"_id": ObjectId(country_id)}, {"$set": update_data})
         return True
@@ -72,7 +87,12 @@ class LocationService(BaseService):
 
         existing = await self.db.countries.find_one({"_id": ObjectId(country_id)})
         if not existing:
-            raise HTTPException(status_code=404, detail="Country not found")
+            raise AppException(
+                    status_code=404,
+                    message="Country not found",
+                    error_code="COUNTRY_NOT_FOUND",
+                    field="country"
+                )
 
         # Toggle the status
         new_status = not existing.get("status", True)
@@ -82,11 +102,11 @@ class LocationService(BaseService):
     async def get_country(self, country_id: str):
         # validate ObjectId format first
         if not ObjectId.is_valid(country_id):
-            raise HTTPException(status_code=400, detail="Invalid country id")
+            raise AppException(status_code=400, message="Invalid country id", error_code="INVALID_COUNTRY_ID", field="country")
 
         doc = await self.db.countries.find_one({"_id": ObjectId(country_id)})
         if not doc:
-            raise HTTPException(status_code=404, detail="Country not found")
+            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
         # convert ObjectId to string for API responses
         doc["_id"] = str(doc["_id"])
         # compute city count — support country stored as name or id in cities collection
@@ -105,77 +125,143 @@ class LocationService(BaseService):
         doc['cities'] = await self.list_cities_by_country(str(doc["_id"]))  # include sample cities
         return doc
 
-    async def list_countries(self, page: int = 1, size: int = 10, sort_by: str = "name", sort_order: str = "asc", search: dict = None):
-        
-        # basic validation
+    async def list_countries(
+        self,
+        page: int = 1,
+        size: int = 10,
+        sort_by: str = "name",
+        sort_order: str = "asc",
+        search: Optional[Dict] = None
+    ):
+
+        # ---------- Validate Pagination ----------
         try:
             page = int(page)
             size = int(size)
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+            raise AppException(
+                status_code=400,
+                message="Invalid pagination parameters",
+                error_code="INVALID_PAGINATION",
+                field="pagination"
+            )
 
         if page < 1 or size < 1:
-            raise HTTPException(status_code=400, detail="page and size must be positive integers")
+            raise AppException(
+                status_code=400,
+                message="page and size must be positive integers",
+                error_code="INVALID_PAGINATION",
+                field="pagination"
+            )
 
         skip = (page - 1) * size
-
         sort_direction = 1 if sort_order.lower() == "asc" else -1
+
+        # ---------- Build Search Query ----------
         query = {}
+
         if search:
             for k, v in search.items():
-                # If the value is already a dict, assume the caller provided a Mongo operator (e.g. {$regex: ...})
+
                 if isinstance(v, dict):
                     query[k] = v
-                # Convert string booleans to actual booleans so boolean fields get matched correctly
+
                 elif isinstance(v, str):
                     lv = v.strip().lower()
+
                     if lv in ("true", "false"):
-                        query[k] = (lv == "true")
+                        query[k] = lv == "true"
                     else:
                         query[k] = {"$regex": v, "$options": "i"}
+
                 else:
-                    # pass through numbers, booleans, lists, etc.
                     query[k] = v
-            
-        cursor = self.db.countries.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
+
+        # ---------- Fetch Countries ----------
+        cursor = (
+            self.db.countries
+            .find(query)
+            .sort(sort_by, sort_direction)
+            .skip(skip)
+            .limit(size)
+        )
+
         items = []
+        country_ids = []
+
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
-            if "city" in doc and not isinstance(doc["city"], str):
-                doc["city"] = str(doc["city"])
-            if "country" in doc and not isinstance(doc["country"], str):
-                doc["country"] = str(doc["country"])
+            country_ids.append(ObjectId(doc["_id"]))
             items.append(doc)
 
         total = await self.db.countries.count_documents(query)
 
-        # add city counts for each country (efficiently per-doc)
-        for doc in items:
-            try:
-                cnt = await self.db.cities.count_documents({
-                    "$or": [
-                        {"country": doc["_id"]},
-                        {"country": ObjectId(doc["_id"])},
-                        {"country": doc.get("name")}
-                    ]
-                })
-            except Exception:
-                cnt = await self.db.cities.count_documents({"country": doc.get("name")})
-            doc["city_count"] = int(cnt)
-            doc['cities'] = await self.list_cities_by_country(str(doc["_id"]))  # include sample cities
+        # ---------- Fetch City Counts ----------
+        city_counts = {}
 
-        return {"items": items, "total": total, "page": page, "size": size}
+        if country_ids:
+            pipeline = [
+                {
+                    "$match": {
+                        "country": {"$in": country_ids}
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$country",
+                        "count": {"$sum": 1}
+                    }
+                }
+            ]
+
+            async for c in self.db.cities.aggregate(pipeline):
+                city_counts[str(c["_id"])] = c["count"]
+
+        # ---------- Fetch All Cities (Single Query) ----------
+        city_map = {}
+
+        if country_ids:
+            cursor = self.db.cities.find({
+                "country": {"$in": country_ids}
+            })
+
+            async for city in cursor:
+                country_id = str(city["country"])
+                city["_id"] = str(city["_id"])
+                city["country"] = country_id
+
+                if country_id not in city_map:
+                    city_map[country_id] = []
+
+                city_map[country_id].append(city)
+
+        # ---------- Attach Data ----------
+        for doc in items:
+            cid = doc["_id"]
+
+            doc["city_count"] = city_counts.get(cid, 0)
+
+            # attach cities list
+            doc["cities"] = city_map.get(cid, [])
+
+        # ---------- Response ----------
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "size": size
+        }
     
     async def create_city(self, city_data: dict, image_bytes: Optional[bytes] = None, content_type: Optional[str] = None, storage: Optional[StorageService] = None):
         # Check if country exists
         country = await self.db.countries.find_one({"_id": ObjectId(city_data["country"])})
         if not country:
-            raise HTTPException(status_code=404, detail="Country not found")
+            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
 
         # Check if city already exists in the same country
         existing_city = await self.db.cities.find_one({"name": city_data["name"], "country": ObjectId(city_data["country"])})
         if existing_city:
-            raise HTTPException(status_code=400, detail="City with this name already exists in the specified country")
+            raise AppException(status_code=400, message="City with this name already exists in the specified country", error_code="CITY_ALREADY_EXISTS", field="name")
 
         # If image bytes provided and storage is available, upload and set image key
         if image_bytes and storage:
@@ -199,71 +285,121 @@ class LocationService(BaseService):
         result = await self.db.cities.insert_one(city_data)
         return str(result.inserted_id)
 
-    async def update_city(self, city_id: str, update_data: dict, image_bytes: Optional[bytes] = None, content_type: Optional[str] = None, storage: Optional[StorageService] = None):
-        # validate ObjectId format first
+    async def update_city(
+        self,
+        city_id: str,
+        update_data: dict,
+        image_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
+        storage: Optional[StorageService] = None
+    ):
+
         if not ObjectId.is_valid(city_id):
-            raise HTTPException(status_code=400, detail="Invalid city id")
+            raise AppException(
+                status_code=400,
+                message="Invalid city id",
+                error_code="INVALID_CITY_ID",
+                field="city"
+            )
 
-        # Check if city exists
-        existing = await self.db.cities.find_one({"_id": ObjectId(city_id)})
+        city_obj_id = ObjectId(city_id)
+
+        existing = await self.db.cities.find_one({"_id": city_obj_id})
         if not existing:
-            raise HTTPException(status_code=404, detail="City not found")
+            raise AppException(
+                status_code=404,
+                message="City not found",
+                error_code="CITY_NOT_FOUND",
+                field="city"
+            )
 
-        # If name or country is being updated, check for conflicts
-        name = update_data.get("name", existing.get("name"))
-        country_id = update_data.get("country", existing.get("country"))
-        
+        name = update_data.get("name", existing["name"])
+        country_id = update_data.get("country", existing["country"])
+
+        # ensure ObjectId
+        if isinstance(country_id, str):
+            if not ObjectId.is_valid(country_id):
+                raise AppException(
+                    status_code=400,
+                    message="Invalid country id",
+                    error_code="INVALID_COUNTRY_ID",
+                    field="country"
+                )
+            country_id = ObjectId(country_id)
+
+        # Check if country exists
+        country_doc = await self.db.countries.find_one({"_id": country_id})
+        if not country_doc:
+            raise AppException(
+                status_code=404,
+                message="Country not found",
+                error_code="COUNTRY_NOT_FOUND",
+                field="country"
+            )
+
+        # Conflict check
         if "name" in update_data or "country" in update_data:
             conflict = await self.db.cities.find_one({
-                "name": name, 
+                "name": name,
                 "country": country_id,
-                "_id": {"$ne": ObjectId(city_id)}
+                "_id": {"$ne": city_obj_id}
             })
-            if conflict:
-                raise HTTPException(status_code=400, detail="City with this name already exists in the specified country")
 
-        # Handle image update
+            if conflict:
+                raise AppException(
+                    status_code=400,
+                    message="City with this name already exists in the specified country",
+                    error_code="CITY_ALREADY_EXISTS",
+                    field="name"
+                )
+
+        # Image update
         if image_bytes and storage:
-            # Delete previous image if exists
+
             old_image_key = existing.get("image")
             if old_image_key:
                 try:
                     await storage.delete_object(old_image_key)
                 except Exception as e:
                     logger.error(f"Failed to delete old image {old_image_key}: {str(e)}")
-                    # Continue anyway to update with new image
 
-            # Generate and upload new image
-            country_doc = await self.db.countries.find_one({"_id": ObjectId(country_id)})
             slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-            key = f"cities/{str(country_doc['_id'])}/{slug}-{uuid.uuid4().hex[:8]}"
-            
+
+            key = f"cities/{str(country_id)}/{slug}-{uuid.uuid4().hex[:8]}"
+
             if content_type:
                 lc = content_type.lower()
-                if 'jpeg' in lc or 'jpg' in lc:
-                    key = key + '.jpg'
-                elif 'png' in lc:
-                    key = key + '.png'
-                elif 'webp' in lc:
-                    key = key + '.webp'
+                if "jpeg" in lc or "jpg" in lc:
+                    key += ".jpg"
+                elif "png" in lc:
+                    key += ".png"
+                elif "webp" in lc:
+                    key += ".webp"
 
             await storage.upload_bytes(key, image_bytes, content_type)
-            update_data['image'] = key
 
-        # Update the document
+            update_data["image"] = key
+
+        # Ensure country stored as ObjectId
+        if "country" in update_data:
+            update_data["country"] = country_id
+
         if update_data:
-            await self.db.cities.update_one({"_id": ObjectId(city_id)}, {"$set": update_data})
-        
+            await self.db.cities.update_one(
+                {"_id": city_obj_id},
+                {"$set": update_data}
+            )
+
         return True
 
     async def list_cities_by_country(self, country_id: str):
         # validate ObjectId format first
         if not ObjectId.is_valid(country_id):
-            raise HTTPException(status_code=400, detail="Invalid country id")
+            raise AppException(status_code=400, message="Invalid country id", error_code="INVALID_COUNTRY_ID", field="country")
 
         country = await self.db.countries.find_one({"_id": ObjectId(country_id)})
         if not country:
-            raise HTTPException(status_code=404, detail="Country not found")
+            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
 
         # match cities where the country field is stored as ObjectId, string id, or name
         query = {
@@ -285,11 +421,11 @@ class LocationService(BaseService):
     async def get_city(self, city_id: str, storage: Optional[StorageService] = None):
         # validate ObjectId format first
         if not ObjectId.is_valid(city_id):
-            raise HTTPException(status_code=400, detail="Invalid city id")
+            raise AppException(status_code=400, message="Invalid city id", error_code="INVALID_CITY_ID", field="city")
 
         doc = await self.db.cities.find_one({"_id": ObjectId(city_id)})
         if not doc:
-            raise HTTPException(status_code=404, detail="City not found")
+            raise AppException(status_code=404, message="City not found", error_code="CITY_NOT_FOUND", field="city")
         # convert ObjectId to string for API responses
         doc["_id"] = str(doc["_id"])
         if "country" in doc and not isinstance(doc["country"], str):
@@ -300,56 +436,142 @@ class LocationService(BaseService):
             except Exception:
                 pass
         return doc
-    async def list_cities(self, page: int = 1, size: int = 10, sort_by: str = "name", sort_order: str = "asc", search: dict = None, storage: Optional[StorageService] = None):
+    async def list_cities(
+        self,
+        page: int = 1,
+        size: int = 10,
+        sort_by: str = "name",
+        sort_order: str = "asc",
+        search: dict = None,
+        storage: Optional[StorageService] = None
+    ):
 
-        # basic validation
         try:
             page = int(page)
             size = int(size)
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+            raise AppException(
+                status_code=400,
+                message="Invalid pagination parameters",
+                error_code="INVALID_PAGINATION_PARAMETERS",
+                field="pagination"
+            )
 
         if page < 1 or size < 1:
-            raise HTTPException(status_code=400, detail="page and size must be positive integers")
+            raise AppException(
+                status_code=400,
+                message="page and size must be positive integers",
+                error_code="INVALID_PAGINATION_VALUES",
+                field="pagination"
+            )
 
         skip = (page - 1) * size
-
         sort_direction = 1 if sort_order.lower() == "asc" else -1
+
         query = {}
+
+       
+       
+
+        # search filter
         if search:
             for k, v in search.items():
-                if isinstance(v, dict):
-                    query[k] = v
-                elif isinstance(v, str):
-                    lv = v.strip().lower()
-                    if lv in ("true", "false"):
-                        query[k] = (lv == "true")
+
+                if k == "country":
+
+                    if ObjectId.is_valid(v):
+                        query["country"] = ObjectId(v)
                     else:
-                        query[k] = {"$regex": v, "$options": "i"}
+                        countries = await self.db.countries.find({
+                            "name": {"$regex": v, "$options": "i"}
+                        }).to_list(None)
+
+                        query["country"] = {"$in": [c["_id"] for c in countries]}
+
                 else:
-                    query[k] = v
-        cursor = self.db.cities.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
+                    if isinstance(v, str):
+                        query[k] = {"$regex": v, "$options": "i"}
+                    else:
+                        query[k] = v
+
+        pipeline = [
+
+            {"$match": query},
+
+            {
+                "$lookup": {
+                    "from": "countries",
+                    "localField": "country",
+                    "foreignField": "_id",
+                    "as": "country_doc"
+                }
+            },
+
+            {
+                "$unwind": {
+                    "path": "$country_doc",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+
+            {
+                "$lookup": {
+                    "from": "locations",
+                    "localField": "_id",
+                    "foreignField": "city",
+                    "as": "locations"
+                }
+            },
+
+            {
+                "$addFields": {
+                    "country": {"$ifNull": ["$country_doc.name", ""]},
+                    "location_count": {"$size": "$locations"}
+                }
+            },
+
+            {
+                "$project": {
+                    "country_doc": 0
+                }
+            },
+
+            {"$sort": {sort_by: sort_direction}},
+            {"$skip": skip},
+            {"$limit": size}
+        ]
+
+        cursor = self.db.cities.aggregate(pipeline)
+
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
-            if "country" in doc:
-                # attempt to resolve country name for better API response
-                try:
-                    country_doc = await self.db.countries.find_one({"_id": ObjectId(doc["country"])})
-                    if country_doc:
-                        doc["country"] = country_doc.get("name", doc["country"])
-                except Exception:
-                    pass
+
+            for loc in doc.get("locations", []):
+                loc["_id"] = str(loc["_id"])
+
+                if "city" in loc and loc["city"]:
+                    loc["city"] = str(loc["city"])
+
+                if "country" in loc and loc["country"]:
+                    loc["country"] = str(loc["country"])
+
             if storage and "image" in doc:
                 try:
                     doc["image"] = storage.generate_presigned_url(doc["image"])
                 except Exception:
                     pass
+
             items.append(doc)
 
         total = await self.db.cities.count_documents(query)
 
-        return {"items": items, "total": total, "page": page, "size": size}
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "size": size
+        }
     
     async def create_location(self, location_data: dict):
         try:
@@ -361,12 +583,12 @@ class LocationService(BaseService):
         # Check if country exists
         country = await self.db.countries.find_one({"_id": country_id})
         if not country:
-            raise HTTPException(status_code=404, detail="Country not found")
+            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
 
         # Check if city exists
         city = await self.db.cities.find_one({"_id": city_id})
         if not city:
-            raise HTTPException(status_code=404, detail="City not found")
+            raise AppException(status_code=404, message="City not found", error_code="CITY_NOT_FOUND", field="city")
 
         # Check if location already exists in same city and country
         existing_location = await self.db.locations.find_one({
@@ -376,10 +598,8 @@ class LocationService(BaseService):
         })
 
         if existing_location:
-            raise HTTPException(
-                status_code=400,
-                detail="Location with this name already exists in the specified city and country"
-            )
+            raise AppException(status_code=400, message="Location with this name already exists in the specified city and country", error_code="LOCATION_ALREADY_EXISTS", field="name") 
+           
 
         # Prepare data to insert
         location_data["city"] = city_id
@@ -405,8 +625,15 @@ class LocationService(BaseService):
         if "city" in doc and not isinstance(doc["city"], str):
             doc["city"] = str(doc["city"])
         return doc
-    async def list_locations(self, page: int = 1, size: int = 10, sort_by: str = "name", sort_order: str = "asc", search: dict = None):
-        # basic validation
+    async def list_locations(
+        self,
+        page: int = 1,
+        size: int = 10,
+        sort_by: str = "name",
+        sort_order: str = "asc",
+        search: dict = None
+    ):
+
         try:
             page = int(page)
             size = int(size)
@@ -417,72 +644,165 @@ class LocationService(BaseService):
             raise HTTPException(status_code=400, detail="page and size must be positive integers")
 
         skip = (page - 1) * size
-
         sort_direction = 1 if sort_order.lower() == "asc" else -1
+
         query = {}
+
+        # search filters
         if search:
             for k, v in search.items():
-                if isinstance(v, dict):
-                    query[k] = v
-                elif isinstance(v, str):
-                    lv = v.strip().lower()
-                    if lv in ("true", "false"):
-                        query[k] = (lv == "true")
+
+                if k == "country":
+                    if ObjectId.is_valid(v):
+                        query["country"] = ObjectId(v)
                     else:
-                        query[k] = {"$regex": v, "$options": "i"}
+                        countries = await self.db.countries.find({
+                            "name": {"$regex": v, "$options": "i"}
+                        }).to_list(None)
+
+                        query["country"] = {"$in": [c["_id"] for c in countries]}
+
+                elif k == "city":
+                    if ObjectId.is_valid(v):
+                        query["city"] = ObjectId(v)
+                    else:
+                        cities = await self.db.cities.find({
+                            "name": {"$regex": v, "$options": "i"}
+                        }).to_list(None)
+
+                        query["city"] = {"$in": [c["_id"] for c in cities]}
+
                 else:
-                    query[k] = v
-        cursor = self.db.locations.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
+                    query[k] = {"$regex": v, "$options": "i"} if isinstance(v, str) else v
+
+        pipeline = [
+
+            {"$match": query},
+
+            {
+                "$lookup": {
+                    "from": "cities",
+                    "localField": "city",
+                    "foreignField": "_id",
+                    "as": "city_doc"
+                }
+            },
+
+            {
+                "$unwind": {
+                    "path": "$city_doc",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+
+            {
+                "$lookup": {
+                    "from": "countries",
+                    "localField": "country",
+                    "foreignField": "_id",
+                    "as": "country_doc"
+                }
+            },
+
+            {
+                "$unwind": {
+                    "path": "$country_doc",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+
+            {
+                "$addFields": {
+                    "city": {"$ifNull": ["$city_doc.name", ""]},
+                    "country": {"$ifNull": ["$country_doc.name", ""]}
+                }
+            },
+
+            {
+                "$project": {
+                    "city_doc": 0,
+                    "country_doc": 0
+                }
+            },
+
+            {"$sort": {sort_by: sort_direction}},
+            {"$skip": skip},
+            {"$limit": size}
+        ]
+
+        cursor = self.db.locations.aggregate(pipeline)
+
         items = []
         async for doc in cursor:
-            # normalize Mongo `_id` to string so response validation succeeds
             doc["_id"] = str(doc["_id"])
-            
-            
-            if doc.get("city"):
-                    city_doc = await self.db.cities.find_one({"_id": ObjectId(doc["city"])})
-                    doc["city"] = city_doc.get("name", doc["city"]) if city_doc else doc["city"]
-            else:
-                doc["city"] = None
-            if doc.get("country"):
-                country_doc = await self.db.countries.find_one({"_id": ObjectId(doc["country"])})
-                doc["country"] = country_doc.get("name", doc["country"]) if country_doc else doc["country"]
-            else:
-                doc["country"] = None
             items.append(doc)
 
         total = await self.db.locations.count_documents(query)
 
-        return {"items": items, "total": total, "page": page, "size": size}
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "size": size
+        }
     
     async def update_location(self, location_id: str, update_data: dict):
-        # validate ObjectId format first
+
         if not ObjectId.is_valid(location_id):
-            raise HTTPException(status_code=400, detail="Invalid location id")
+            raise AppException(
+                status_code=400,
+                message="Invalid location id",
+                error_code="INVALID_LOCATION_ID",
+                field="location"
+            )
 
         existing = await self.db.locations.find_one({"_id": ObjectId(location_id)})
         if not existing:
-            raise HTTPException(status_code=404, detail="Location not found")
+            raise AppException(
+                status_code=404,
+                message="Location not found",
+                error_code="LOCATION_NOT_FOUND",
+                field="location"
+            )
 
-        # If name, city, or country is being updated, check for conflicts
+        # Convert ids if provided
+        if "city" in update_data:
+            if not ObjectId.is_valid(update_data["city"]):
+                raise AppException(400, "Invalid city id", "INVALID_CITY_ID", "city")
+            update_data["city"] = ObjectId(update_data["city"])
+
+        if "country" in update_data:
+            if not ObjectId.is_valid(update_data["country"]):
+                raise AppException(400, "Invalid country id", "INVALID_COUNTRY_ID", "country")
+            update_data["country"] = ObjectId(update_data["country"])
+
         name = update_data.get("name", existing.get("name"))
         city_id = update_data.get("city", existing.get("city"))
         country_id = update_data.get("country", existing.get("country"))
-        
+
+        # Conflict check
         if "name" in update_data or "city" in update_data or "country" in update_data:
             conflict = await self.db.locations.find_one({
-                "name": name, 
+                "name": name,
                 "city": city_id,
                 "country": country_id,
                 "_id": {"$ne": ObjectId(location_id)}
             })
-            if conflict:
-                raise HTTPException(status_code=400, detail="Location with this name already exists in the specified city and country")
 
-        # Update the document
+            if conflict:
+                raise AppException(
+                    status_code=409,
+                    message="Location with this name already exists in the specified city and country",
+                    error_code="LOCATION_ALREADY_EXISTS",
+                    field="name"
+                )
+
         if update_data:
-            await self.db.locations.update_one({"_id": ObjectId(location_id)}, {"$set": update_data})
-        
+            await self.db.locations.update_one(
+                {"_id": ObjectId(location_id)},
+                {"$set": update_data}
+            )
+
         return True
 
     

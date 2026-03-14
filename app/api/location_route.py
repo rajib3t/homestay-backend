@@ -352,7 +352,7 @@ async def list_cities(
         if city_list.country:
             # country = await location_service.db.countries.find_one({"name": city_list.country}, {"_id": 1})
             # if country:
-            search["country"] = ObjectId(city_list.country)
+            search["country"] = city_list.country
         if city_list.is_popular is not None:
             search["is_popular"] = city_list.is_popular
         cities = await location_service.list_cities(page=city_list.page, size=city_list.size, sort_by=city_list.sort_by, sort_order=city_list.sort_order, search=search, storage=storage)

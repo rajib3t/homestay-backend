@@ -8,20 +8,27 @@ from typing import Optional,Dict
 import re
 import uuid
 from app.services.storage_service import StorageService
+from pymongo.errors import DuplicateKeyError
 logger = logging.getLogger(__name__)
 class LocationService(BaseService):
+  
+
     async def create_country(self, country_data: Dict):
+
         # Normalize values
         country_data["name"] = country_data["name"].strip()
         country_data["code"] = country_data["code"].upper().strip()
 
-        # Check uniqueness
-        existing = await self.db.countries.find_one({
-            "$or": [
-                {"name": country_data["name"]},
-                {"code": country_data["code"]}
-            ]
-        })
+        # Optional pre-check for better error messages
+        existing = await self.db.countries.find_one(
+            {
+                "$or": [
+                    {"name": country_data["name"]},
+                    {"code": country_data["code"]}
+                ]
+            },
+            {"name": 1, "code": 1}
+        )
 
         if existing:
             if existing.get("name") == country_data["name"]:
@@ -40,36 +47,23 @@ class LocationService(BaseService):
                     field="code"
                 )
 
-        # Insert country
-        result = await self.db.countries.insert_one(country_data)
+        try:
+            result = await self.db.countries.insert_one(country_data)
+            return str(result.inserted_id)
 
-        return str(result.inserted_id)
-    
-    async def update_country(self, country_id: str, update_data: dict):
-        # validate ObjectId format first
-        if not ObjectId.is_valid(country_id):
-            raise AppException(400, "Invalid country id")
+        except DuplicateKeyError as e:
 
-        existing = await self.db.countries.find_one({"_id": ObjectId(country_id)})
-        if not existing:
-            raise AppException(
-                    status_code=404,
-                    message="Country not found",
-                    error_code="COUNTRY_NOT_FOUND",
-                    field="country"
-                )
+            error_msg = str(e)
 
-        # Check for uniqueness of name and code
-        if "name" in update_data and update_data["name"] != existing["name"]:
-            if await self.db.countries.find_one({"name": update_data["name"]}):
+            if "name" in error_msg:
                 raise AppException(
                     status_code=409,
                     message="Country with this name already exists",
                     error_code="COUNTRY_NAME_EXISTS",
                     field="name"
                 )
-        if "code" in update_data and update_data["code"] != existing["code"]:
-            if await self.db.countries.find_one({"code": update_data["code"]}):
+
+            if "code" in error_msg:
                 raise AppException(
                     status_code=409,
                     message="Country with this code already exists",
@@ -77,8 +71,107 @@ class LocationService(BaseService):
                     field="code"
                 )
 
-        await self.db.countries.update_one({"_id": ObjectId(country_id)}, {"$set": update_data})
-        return True
+            raise
+    
+    async def update_country(self, country_id: str, update_data: dict):
+
+        # Validate ObjectId
+        if not ObjectId.is_valid(country_id):
+            raise AppException(
+                status_code=400,
+                message="Invalid country id",
+                error_code="INVALID_COUNTRY_ID",
+                field="country"
+            )
+
+        country_obj_id = ObjectId(country_id)
+
+        # Normalize values
+        if "name" in update_data:
+            update_data["name"] = update_data["name"].strip()
+
+        if "code" in update_data:
+            update_data["code"] = update_data["code"].upper().strip()
+
+        # Check if country exists
+        existing = await self.db.countries.find_one({"_id": country_obj_id})
+        if not existing:
+            raise AppException(
+                status_code=404,
+                message="Country not found",
+                error_code="COUNTRY_NOT_FOUND",
+                field="country"
+            )
+
+        # Check uniqueness (exclude current country)
+        conditions = []
+        if "name" in update_data and update_data["name"] != existing.get("name"):
+            conditions.append({"name": update_data["name"]})
+
+        if "code" in update_data and update_data["code"] != existing.get("code"):
+            conditions.append({"code": update_data["code"]})
+
+        if conditions:
+            duplicate = await self.db.countries.find_one({
+                "_id": {"$ne": country_obj_id},
+                "$or": conditions
+            })
+
+            if duplicate:
+                if duplicate.get("name") == update_data.get("name"):
+                    raise AppException(
+                        status_code=409,
+                        message="Country with this name already exists",
+                        error_code="COUNTRY_NAME_EXISTS",
+                        field="name"
+                    )
+
+                if duplicate.get("code") == update_data.get("code"):
+                    raise AppException(
+                        status_code=409,
+                        message="Country with this code already exists",
+                        error_code="COUNTRY_CODE_EXISTS",
+                        field="code"
+                    )
+
+        try:
+             # Ensure unique indexes exist for name (case-insensitive) and code (exact)
+            try:
+                await self.db.countries.create_index(
+                    [("name", 1)], unique=True,
+                    collation={"locale": "en", "strength": 2},
+                    background=True
+                )
+                await self.db.countries.create_index(
+                    [("code", 1)], unique=True, background=True
+                )
+            except Exception as ie:
+                logger.warning(f"Failed to ensure country indexes: {ie}")
+
+            await self.db.countries.update_one(
+                {"_id": country_obj_id},
+                {"$set": update_data}
+            )
+            return True
+
+        except DuplicateKeyError as e:
+            if "name" in str(e):
+                raise AppException(
+                    status_code=409,
+                    message="Country with this name already exists",
+                    error_code="COUNTRY_NAME_EXISTS",
+                    field="name"
+                )
+
+            if "code" in str(e):
+                raise AppException(
+                    status_code=409,
+                    message="Country with this code already exists",
+                    error_code="COUNTRY_CODE_EXISTS",
+                    field="code"
+                )
+
+            raise
     
     async def toggle_country_status(self, country_id: str):
         # validate ObjectId format first
@@ -252,38 +345,89 @@ class LocationService(BaseService):
             "size": size
         }
     
-    async def create_city(self, city_data: dict, image_bytes: Optional[bytes] = None, content_type: Optional[str] = None, storage: Optional[StorageService] = None):
-        # Check if country exists
-        country = await self.db.countries.find_one({"_id": ObjectId(city_data["country"])})
+    async def create_city(
+        self,
+        city_data: dict,
+        image_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
+        storage: Optional[StorageService] = None
+    ):
+
+        # Normalize name
+        city_data["name"] = city_data["name"].strip()
+
+        # Validate country id
+        if not ObjectId.is_valid(city_data["country"]):
+            raise AppException(
+                status_code=400,
+                message="Invalid country id",
+                error_code="INVALID_COUNTRY_ID",
+                field="country"
+            )
+
+        country_id = ObjectId(city_data["country"])
+
+        # Check country exists
+        country = await self.db.countries.find_one({"_id": country_id})
         if not country:
-            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
+            raise AppException(
+                status_code=404,
+                message="Country not found",
+                error_code="COUNTRY_NOT_FOUND",
+                field="country"
+            )
 
-        # Check if city already exists in the same country
-        existing_city = await self.db.cities.find_one({"name": city_data["name"], "country": ObjectId(city_data["country"])})
-        if existing_city:
-            raise AppException(status_code=400, message="City with this name already exists in the specified country", error_code="CITY_ALREADY_EXISTS", field="name")
+        # Check duplicate city in same country
+        existing = await self.db.cities.find_one({
+            "name": city_data["name"],
+            "country": country_id
+        })
 
-        # If image bytes provided and storage is available, upload and set image key
+        if existing:
+            raise AppException(
+                status_code=409,
+                message="City with this name already exists in the specified country",
+                error_code="CITY_ALREADY_EXISTS",
+                field="name"
+            )
+
+        # Image upload
         if image_bytes and storage:
-            # generate safe key using city name and uuid
-            name = city_data.get("name", "city")
-            slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-            key = f"cities/{str(country['_id'])}/{slug}-{uuid.uuid4().hex[:8]}"
-            # append extension if content_type indicates common image types
+
+            slug = re.sub(r"[^a-z0-9]+", "-", city_data["name"].lower()).strip("-")
+
+            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}"
+
             if content_type:
-                lc = content_type.lower()
-                if 'jpeg' in lc or 'jpg' in lc:
-                    key = key + '.jpg'
-                elif 'png' in lc:
-                    key = key + '.png'
-                elif 'webp' in lc:
-                    key = key + '.webp'
+                if "jpeg" in content_type or "jpg" in content_type:
+                    key += ".jpg"
+                elif "png" in content_type:
+                    key += ".png"
+                elif "webp" in content_type:
+                    key += ".webp"
 
             await storage.upload_bytes(key, image_bytes, content_type)
-            city_data['image'] = key
-            city_data['country'] = ObjectId(city_data['country'])  # ensure country is stored as ObjectId
-        result = await self.db.cities.insert_one(city_data)
-        return str(result.inserted_id)
+
+            city_data["image"] = key
+
+        city_data["country"] = country_id
+
+        try:
+            await self.db.cities.create_index(
+                [("name", 1), ("country", 1)],
+                unique=True,
+                collation={"locale": "en", "strength": 2}
+            )
+            result = await self.db.cities.insert_one(city_data)
+            return str(result.inserted_id)
+    
+        except DuplicateKeyError:
+            raise AppException(
+                status_code=409,
+                message="City with this name already exists in the specified country",
+                error_code="CITY_ALREADY_EXISTS",
+                field="name"
+            )
 
     async def update_city(
         self,
@@ -313,10 +457,9 @@ class LocationService(BaseService):
                 field="city"
             )
 
-        name = update_data.get("name", existing["name"])
+        name = update_data.get("name", existing["name"]).strip()
         country_id = update_data.get("country", existing["country"])
 
-        # ensure ObjectId
         if isinstance(country_id, str):
             if not ObjectId.is_valid(country_id):
                 raise AppException(
@@ -327,9 +470,9 @@ class LocationService(BaseService):
                 )
             country_id = ObjectId(country_id)
 
-        # Check if country exists
-        country_doc = await self.db.countries.find_one({"_id": country_id})
-        if not country_doc:
+        # Check country exists
+        country = await self.db.countries.find_one({"_id": country_id})
+        if not country:
             raise AppException(
                 status_code=404,
                 message="Country not found",
@@ -337,58 +480,54 @@ class LocationService(BaseService):
                 field="country"
             )
 
-        # Conflict check
-        if "name" in update_data or "country" in update_data:
-            conflict = await self.db.cities.find_one({
-                "name": name,
-                "country": country_id,
-                "_id": {"$ne": city_obj_id}
-            })
+        # Check duplicate city
+        duplicate = await self.db.cities.find_one({
+            "name": name,
+            "country": country_id,
+            "_id": {"$ne": city_obj_id}
+        })
 
-            if conflict:
-                raise AppException(
-                    status_code=400,
-                    message="City with this name already exists in the specified country",
-                    error_code="CITY_ALREADY_EXISTS",
-                    field="name"
-                )
+        if duplicate:
+            raise AppException(
+                status_code=409,
+                message="City with this name already exists in the specified country",
+                error_code="CITY_ALREADY_EXISTS",
+                field="name"
+            )
 
-        # Image update
+        # Upload new image
         if image_bytes and storage:
 
-            old_image_key = existing.get("image")
-            if old_image_key:
+            old_image = existing.get("image")
+            if old_image:
                 try:
-                    await storage.delete_object(old_image_key)
+                    await storage.delete_object(old_image)
                 except Exception as e:
-                    logger.error(f"Failed to delete old image {old_image_key}: {str(e)}")
+                    logger.error(f"Failed deleting image: {e}")
 
-            slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+            slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
-            key = f"cities/{str(country_id)}/{slug}-{uuid.uuid4().hex[:8]}"
+            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}"
 
             if content_type:
-                lc = content_type.lower()
-                if "jpeg" in lc or "jpg" in lc:
+                if "jpeg" in content_type or "jpg" in content_type:
                     key += ".jpg"
-                elif "png" in lc:
+                elif "png" in content_type:
                     key += ".png"
-                elif "webp" in lc:
+                elif "webp" in content_type:
                     key += ".webp"
 
             await storage.upload_bytes(key, image_bytes, content_type)
 
             update_data["image"] = key
 
-        # Ensure country stored as ObjectId
-        if "country" in update_data:
-            update_data["country"] = country_id
+        update_data["name"] = name
+        update_data["country"] = country_id
 
-        if update_data:
-            await self.db.cities.update_one(
-                {"_id": city_obj_id},
-                {"$set": update_data}
-            )
+        await self.db.cities.update_one(
+            {"_id": city_obj_id},
+            {"$set": update_data}
+        )
 
         return True
 

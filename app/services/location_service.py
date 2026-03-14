@@ -135,19 +135,7 @@ class LocationService(BaseService):
                     )
 
         try:
-             # Ensure unique indexes exist for name (case-insensitive) and code (exact)
-            try:
-                await self.db.countries.create_index(
-                    [("name", 1)], unique=True,
-                    collation={"locale": "en", "strength": 2},
-                    background=True
-                )
-                await self.db.countries.create_index(
-                    [("code", 1)], unique=True, background=True
-                )
-            except Exception as ie:
-                logger.warning(f"Failed to ensure country indexes: {ie}")
-
+            
             await self.db.countries.update_one(
                 {"_id": country_obj_id},
                 {"$set": update_data}

@@ -51,27 +51,65 @@ class Application:
 
     def _register_exception_handlers(self):
         @self.app.exception_handler(AppException)
-        async def app_exception_handler(request, exc: AppException):
+        async def app_exception_handler(request: Request, exc: AppException):
+
+            # If AppException already provides structured detail
+            if isinstance(exc.detail, dict):
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content=exc.detail
+                )
+
+            # fallback (should rarely happen)
             return JSONResponse(
                 status_code=exc.status_code,
-                content={"status": "error", "message": exc.detail},
+                content={
+                    "status": "error",
+                    "message": exc.detail
+                }
             )
 
         @self.app.exception_handler(RequestValidationError)
         async def validation_exception_handler(request: Request, exc: RequestValidationError):
-            # Return a consistent JSON shape for validation errors
+
+            errors = []
+
+            for err in exc.errors():
+                field = err["loc"][-1]
+                message = err["msg"]
+
+                errors.append({
+                    "field": field,
+                    "message": message
+                })
+
             return JSONResponse(
                 status_code=422,
-                content={"status": "error", "message": "Validation error", "detail": exc.errors()},
+                content={
+                    "status": "error",
+                    "message": "Validation error",
+                    "errors": errors
+                },
             )
 
         @self.app.exception_handler(HTTPException)
         async def http_exception_handler(request: Request, exc: HTTPException):
-            # Normalize FastAPI/Starlette HTTPExceptions to our JSON shape
-            detail = exc.detail if not isinstance(exc.detail, (list, dict)) else exc.detail
+
+            message = exc.detail
+
+            # If detail is already structured
+            if isinstance(message, dict):
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content=message
+                )
+
             return JSONResponse(
-                status_code=getattr(exc, "status_code", 500),
-                content={"status": "error", "message": detail},
+                status_code=exc.status_code,
+                content={
+                    "status": "error",
+                    "message": message,
+                }
             )
 
     def _register_routes(self):

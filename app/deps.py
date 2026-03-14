@@ -3,6 +3,7 @@ from app.core.database import get_database
 from app.services.user_service import UserService
 from app.services.token_service import TokenService
 from app.services.location_service import LocationService
+from app.services.storage_service import StorageService
 from app.core.security import JWTHandler
 from app.core.config import settings
 from app.core.exceptions import AppException
@@ -44,3 +45,7 @@ def get_current_user(request: Request) -> str:
 
 def get_location_service(db=Depends(get_database)):
     return LocationService(db)
+
+
+def get_storage_service():
+    return StorageService()

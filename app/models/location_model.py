@@ -1,7 +1,27 @@
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 from typing import Annotated, Optional
-
+from app.models.request import ListRequest
 UppercaseStr = Annotated[str, AfterValidator(lambda v: v.upper())]
+
+class CountryList(ListRequest):
+    name: Optional[str] = None 
+    code: Optional[str] = None
+    status: Optional[bool] = None
+    _allowed_sort_fields = ['name', 'code']
+
+
+class CityList(ListRequest):
+    name: Optional[str] = None 
+    country: Optional[str] = None
+    is_popular: Optional[bool] = None
+    _allowed_sort_fields = ['name', 'country']
+
+class LocationList(ListRequest):
+    name: Optional[str] = None 
+    city: Optional[str] = None
+    country: Optional[str] = None
+    _allowed_sort_fields = ['name', 'city', 'country']
+
 class CountryCreate(BaseModel):
     name: str
     code: UppercaseStr = Field(..., min_length=2, max_length=3)
@@ -12,7 +32,7 @@ class CityCreate(BaseModel):
     name: str
     country: str
     is_popular: bool = False
-    image: Optional[str] = None
+    
 
 
 class LocationCreate(BaseModel):
@@ -30,10 +50,10 @@ class CityUpdate(BaseModel):
     name: Optional[str] = None
     country: Optional[str] = None
     is_popular: Optional[bool] = None
-    image: Optional[str] = None
+   
 class LocationUpdate(BaseModel):
     name: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
-    image: Optional[str] = None
+    
 

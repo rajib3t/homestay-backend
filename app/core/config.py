@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -15,6 +16,14 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
     SECURE_COOKIES: bool = False
+    # S3 / MinIO settings
+    S3_PROVIDER: Optional[str] = None  # 'aws' or 'minio' (optional)
+    S3_ENDPOINT_URL: Optional[str] = None
+    S3_REGION: Optional[str] = None
+    S3_ACCESS_KEY: Optional[str] = None
+    S3_SECRET_KEY: Optional[str] = None
+    S3_BUCKET: Optional[str] = None
+    S3_USE_SSL: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

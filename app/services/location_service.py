@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from starlette.exceptions import HTTPException
 import logging
 
@@ -48,6 +50,7 @@ class LocationService(BaseService):
                 )
 
         try:
+            self.timestamps(country_data, is_new=True)
             result = await self.db.countries.insert_one(country_data)
             return str(result.inserted_id)
 
@@ -135,7 +138,7 @@ class LocationService(BaseService):
                     )
 
         try:
-            
+            self.timestamps(update_data)
             await self.db.countries.update_one(
                 {"_id": country_obj_id},
                 {"$set": update_data}
@@ -177,45 +180,20 @@ class LocationService(BaseService):
 
         # Toggle the status
         new_status = not existing.get("status", True)
-        await self.db.countries.update_one({"_id": ObjectId(country_id)}, {"$set": {"status": new_status}})
+        update_data = {"status": new_status}
+        self.timestamps(update_data)
+        await self.db.countries.update_one({"_id": ObjectId(country_id)}, {"$set": update_data})
         return True
 
-    async def get_country(self, country_id: str):
-        # validate ObjectId format first
-        if not ObjectId.is_valid(country_id):
-            raise AppException(status_code=400, message="Invalid country id", error_code="INVALID_COUNTRY_ID", field="country")
-
-        doc = await self.db.countries.find_one({"_id": ObjectId(country_id)})
-        if not doc:
-            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
-        # convert ObjectId to string for API responses
-        doc["_id"] = str(doc["_id"])
-        # compute city count — support country stored as name or id in cities collection
-        try:
-            count = await self.db.cities.count_documents({
-                "$or": [
-                    {"country": doc["_id"]},
-                    {"country": ObjectId(doc["_id"])},
-                    {"country": doc.get("name")}
-                ]
-            })
-        except Exception:
-            # fallback: attempt simple name-based count
-            count = await self.db.cities.count_documents({"country": doc.get("name")})
-        doc["city_count"] = int(count)
-        doc['cities'] = await self.list_cities_by_country(str(doc["_id"]))  # include sample cities
-        return doc
-
     async def list_countries(
-        self,
-        page: int = 1,
-        size: int = 10,
-        sort_by: str = "name",
-        sort_order: str = "asc",
-        search: Optional[Dict] = None
-    ):
+    self,
+    page: int = 1,
+    size: int = 10,
+    sort_by: str = "name",
+    sort_order: str = "asc",
+    search: Optional[Dict] = None
+):
 
-        # ---------- Validate Pagination ----------
         try:
             page = int(page)
             size = int(size)
@@ -238,7 +216,7 @@ class LocationService(BaseService):
         skip = (page - 1) * size
         sort_direction = 1 if sort_order.lower() == "asc" else -1
 
-        # ---------- Build Search Query ----------
+        # -------- Build Search Query --------
         query = {}
 
         if search:
@@ -258,80 +236,92 @@ class LocationService(BaseService):
                 else:
                     query[k] = v
 
-        # ---------- Fetch Countries ----------
-        cursor = (
-            self.db.countries
-            .find(query)
-            .sort(sort_by, sort_direction)
-            .skip(skip)
-            .limit(size)
-        )
+        pipeline = [
+
+            # Match filters
+            {
+                "$match": query
+            },
+
+            # Sort
+            {
+                "$sort": {sort_by: sort_direction}
+            },
+
+            # Pagination
+            {
+                "$skip": skip
+            },
+            {
+                "$limit": size
+            },
+
+            # Lookup cities
+            {
+                "$lookup": {
+                    "from": "cities",
+                    "localField": "_id",
+                    "foreignField": "country",
+                    "as": "cities"
+                }
+            },
+
+            # Add city_count
+            {
+                "$addFields": {
+                    "city_count": {"$size": "$cities"}
+                }
+            },
+
+            # Convert ObjectId to string
+            {
+                "$addFields": {
+                    "_id": {"$toString": "$_id"},
+                    "cities": {
+                        "$map": {
+                            "input": "$cities",
+                            "as": "city",
+                            "in": {
+                                "_id": {"$toString": "$$city._id"},
+                                "name": "$$city.name",
+                                "country": {"$toString": "$$city.country"},
+                                "created_at": "$$city.created_at",
+                                "updated_at": "$$city.updated_at"
+                            }
+                        }
+                    }
+                }
+            }
+
+        ]
+
+        cursor = self.db.countries.aggregate(pipeline)
 
         items = []
-        country_ids = []
-
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
-            country_ids.append(ObjectId(doc["_id"]))
             items.append(doc)
 
         total = await self.db.countries.count_documents(query)
 
-        # ---------- Fetch City Counts ----------
-        city_counts = {}
-
-        if country_ids:
-            pipeline = [
-                {
-                    "$match": {
-                        "country": {"$in": country_ids}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$country",
-                        "count": {"$sum": 1}
-                    }
-                }
-            ]
-
-            async for c in self.db.cities.aggregate(pipeline):
-                city_counts[str(c["_id"])] = c["count"]
-
-        # ---------- Fetch All Cities (Single Query) ----------
-        city_map = {}
-
-        if country_ids:
-            cursor = self.db.cities.find({
-                "country": {"$in": country_ids}
-            })
-
-            async for city in cursor:
-                country_id = str(city["country"])
-                city["_id"] = str(city["_id"])
-                city["country"] = country_id
-
-                if country_id not in city_map:
-                    city_map[country_id] = []
-
-                city_map[country_id].append(city)
-
-        # ---------- Attach Data ----------
-        for doc in items:
-            cid = doc["_id"]
-
-            doc["city_count"] = city_counts.get(cid, 0)
-
-            # attach cities list
-            doc["cities"] = city_map.get(cid, [])
-
-        # ---------- Response ----------
         return {
             "items": items,
             "total": total,
             "page": page,
             "size": size
         }
+    
+    async def get_country(self, country_id: str):
+        # validate ObjectId format first
+        if not ObjectId.is_valid(country_id):
+            raise AppException(status_code=400, message="Invalid country id", error_code="INVALID_COUNTRY_ID", field="country")
+
+        doc = await self.db.countries.find_one({"_id": ObjectId(country_id)})
+        if not doc:
+            raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
+        doc["_id"] = str(doc["_id"])
+        return doc
+
     
     async def create_city(
         self,
@@ -384,28 +374,31 @@ class LocationService(BaseService):
 
             slug = re.sub(r"[^a-z0-9]+", "-", city_data["name"].lower()).strip("-")
 
-            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}"
+            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}.webp"
 
-            if content_type:
-                if "jpeg" in content_type or "jpg" in content_type:
-                    key += ".jpg"
-                elif "png" in content_type:
-                    key += ".png"
-                elif "webp" in content_type:
-                    key += ".webp"
+            # if content_type:
+            #     if "jpeg" in content_type or "jpg" in content_type:
+            #         key += ".jpg"
+            #     elif "png" in content_type:
+            #         key += ".png"
+            #     elif "webp" in content_type:
+            #         key += ".webp"
 
-            await storage.upload_bytes(key, image_bytes, content_type)
+            await storage.convert_and_upload_webp(
+                key=key, 
+                data=image_bytes, 
+                quality=90, 
+                
+                )
+            # await storage.upload_bytes(key, image_bytes, content_type)
 
             city_data["image"] = key
 
         city_data["country"] = country_id
 
         try:
-            await self.db.cities.create_index(
-                [("name", 1), ("country", 1)],
-                unique=True,
-                collation={"locale": "en", "strength": 2}
-            )
+            
+            self.timestamps(city_data, is_new=True)
             result = await self.db.cities.insert_one(city_data)
             return str(result.inserted_id)
     
@@ -495,23 +488,28 @@ class LocationService(BaseService):
 
             slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
-            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}"
+            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}.webp"
 
-            if content_type:
-                if "jpeg" in content_type or "jpg" in content_type:
-                    key += ".jpg"
-                elif "png" in content_type:
-                    key += ".png"
-                elif "webp" in content_type:
-                    key += ".webp"
+            # if content_type:
+            #     if "jpeg" in content_type or "jpg" in content_type:
+            #         key += ".jpg"
+            #     elif "png" in content_type:
+            #         key += ".png"
+            #     elif "webp" in content_type:
+            #         key += ".webp"
 
-            await storage.upload_bytes(key, image_bytes, content_type)
-
+            # await storage.convert_and_upload_webp(key, image_bytes, 90)
+            await storage.convert_and_upload_webp(
+                key=key, 
+                data=image_bytes, 
+                quality=90, 
+                
+                )
             update_data["image"] = key
 
         update_data["name"] = name
         update_data["country"] = country_id
-
+        self.timestamps(update_data)
         await self.db.cities.update_one(
             {"_id": city_obj_id},
             {"$set": update_data}
@@ -731,7 +729,7 @@ class LocationService(BaseService):
         # Prepare data to insert
         location_data["city"] = city_id
         location_data["country"] = country_id
-
+        self.timestamps(location_data, is_new=True)
         result = await self.db.locations.insert_one(location_data)
 
         return str(result.inserted_id)
@@ -925,6 +923,7 @@ class LocationService(BaseService):
                 )
 
         if update_data:
+            self.timestamps(update_data)
             await self.db.locations.update_one(
                 {"_id": ObjectId(location_id)},
                 {"$set": update_data}

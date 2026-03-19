@@ -39,6 +39,24 @@ class IndexCreator:
 
             logger.info("Ensured MongoDB indexes for countries/cities/locations")
 
+            await db.amenities.create_index(
+                [("name", 1)], unique=True,
+                collation={"locale": "en", "strength": 2},
+                background=True,
+            )
+            logger.info("Ensured MongoDB indexes for amenities")
+            await db.facilities.create_index(
+                [("name", 1)], unique=True,
+                collation={"locale": "en", "strength": 2},
+                background=True,
+            )
+            logger.info("Ensured MongoDB indexes for facilities")
+            await db.room_types.create_index(
+                [("name", 1)], unique=True,
+                collation={"locale": "en", "strength": 2},
+                background=True,
+            )
+            logger.info("Ensured MongoDB indexes for room types")
         except Exception:
             logger.exception("Failed to create/ensure MongoDB indexes")
             raise

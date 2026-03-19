@@ -1,3 +1,5 @@
+import datetime
+
 from pydantic import BaseModel, Field
 from pydantic import ConfigDict
 from typing import Optional
@@ -8,6 +10,8 @@ class Location(BaseModel):
     name: str
     city: str
     country: str
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
 
 
 class LocationOut(BaseModel):
@@ -15,7 +19,8 @@ class LocationOut(BaseModel):
     name: str
     city: Optional[str] = None
     country: Optional[str] = None
-
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
     model_config = ConfigDict(populate_by_name=True)
 
 class LocationResponse(BaseResponse):
@@ -30,6 +35,8 @@ class City(BaseModel):
     image: Optional[str] = None
     is_popular: bool = False
     locations: list[Location] = Field(default_factory=list)
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
 
 class Country(BaseModel):
     name: str
@@ -37,6 +44,8 @@ class Country(BaseModel):
     dial_code: int = Field(..., ge=1, le=999)
     cities: list[City] = Field(default_factory=list)
     status: bool = True
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
 
 class CountryOut(BaseModel):
     id: str = Field(..., alias="_id")
@@ -45,6 +54,8 @@ class CountryOut(BaseModel):
     dial_code: int = Field(..., ge=1, le=999)
     status: bool = True
     city_count: int = 0
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -56,6 +67,8 @@ class CityOut(BaseModel):
     is_popular: bool = False
     location_count: int = 0
     locations: list[LocationOut] = Field(default_factory=list)
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
 
     model_config = ConfigDict(populate_by_name=True)
 

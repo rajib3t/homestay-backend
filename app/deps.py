@@ -1,5 +1,6 @@
 from fastapi import Depends, Request
 from app.core.database import get_database
+from app.services.attribute_service import AttributeService
 from app.services.user_service import UserService
 from app.services.token_service import TokenService
 from app.services.location_service import LocationService
@@ -49,3 +50,7 @@ def get_location_service(db=Depends(get_database)):
 
 def get_storage_service():
     return StorageService()
+
+def get_attribute_service(db=Depends(get_database)):
+    
+    return AttributeService(db)

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from app.core.security import PasswordHasher
@@ -12,7 +13,7 @@ class UserService(BaseService):
 
         # Hash the password
         user_data["password"] = PasswordHasher.hash_password(user_data["password"])
-        
+        self.timestamps(user_data, is_new=True)
         result = await self.db.users.insert_one(user_data)
         return str(result.inserted_id)
 
@@ -22,6 +23,13 @@ class UserService(BaseService):
         if not user:
             raise AppException(404, "User not found")
         user["_id"] = str(user["_id"])
+        # Ensure datetime fields are serialized as strings for response validation
+        if user.get("created_at") and isinstance(user.get("created_at"), datetime):
+            user["created_at"] = user["created_at"].isoformat()
+
+        if user.get("updated_at") and isinstance(user.get("updated_at"), datetime):
+            user["updated_at"] = user["updated_at"].isoformat()
+
         return user
 
     async def update_user(self, user_id: str, update_data: dict):
@@ -39,6 +47,7 @@ class UserService(BaseService):
                 raise AppException(400, "Email already exists")
 
         _id = ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id
+        self.timestamps(update_data)
         result = await self.db.users.update_one(
             {"_id": _id},
             {"$set": update_data}
@@ -58,4 +67,11 @@ class UserService(BaseService):
             return None
         
         user["_id"] = str(user["_id"])
+        # Serialize datetimes to ISO strings to match response schema
+        if user.get("created_at") and isinstance(user.get("created_at"), datetime):
+            user["created_at"] = user["created_at"].isoformat()
+
+        if user.get("updated_at") and isinstance(user.get("updated_at"), datetime):
+            user["updated_at"] = user["updated_at"].isoformat()
+
         return user

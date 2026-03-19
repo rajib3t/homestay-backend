@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr, Field
 from pydantic import ConfigDict
 from app.schemas.response import BaseResponse
@@ -9,6 +11,8 @@ class UserBase(BaseModel):
     first_name: str
     last_name: str
     mobile: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 class UserResponse(UserBase):
     id: str = Field(..., alias="_id")

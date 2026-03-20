@@ -5,17 +5,21 @@ from app.services.user_service import UserService
 from app.services.token_service import TokenService
 from app.services.location_service import LocationService
 from app.services.storage_service import StorageService
+from app.repositories.attribute_repository import AttributeRepository
+from app.repositories.location_repository import LocationRepository
+from app.repositories.token_repository import TokenRepository
+from app.repositories.user_repository import UserRepository
 from app.core.security import JWTHandler
 from app.core.config import settings
 from app.core.exceptions import AppException
 
 
 def get_user_service(db=Depends(get_database)):
-    return UserService(db)
+    return UserService(UserRepository(db))
 
 
 def get_token_service(db=Depends(get_database)):
-    return TokenService(db)
+    return TokenService(TokenRepository(db))
 
 
 
@@ -45,12 +49,11 @@ def get_current_user(request: Request) -> str:
 
 
 def get_location_service(db=Depends(get_database)):
-    return LocationService(db)
+    return LocationService(LocationRepository(db))
 
 
 def get_storage_service():
     return StorageService()
 
 def get_attribute_service(db=Depends(get_database)):
-    
-    return AttributeService(db)
+    return AttributeService(AttributeRepository(db))

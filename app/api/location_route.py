@@ -1,10 +1,7 @@
-import base64
 import logging
-import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form
-from pydantic import json
 
 from app.deps import get_location_service, get_storage_service
 from app.services.location_service import LocationService
@@ -12,7 +9,7 @@ from app.services.location_service import LocationService
 from app.models.location_model import (
     CityCreate, CityList,
     CountryCreate, CountryUpdate, CountryList,
-    LocationCreate, LocationList
+    LocationCreate, LocationList, LocationUpdate
 )
 
 from app.schemas.location_schema import (
@@ -24,7 +21,8 @@ from app.schemas.location_schema import (
 from app.utils.api_utils import (
     handle_exception,
     parse_request_payload,
-    parse_base64_image,
+    parse_optional_request_payload,
+    parse_image_input,
     build_search
 )
 
@@ -72,14 +70,12 @@ async def create_country(
     status_code=status.HTTP_200_OK,
     response_model_by_alias=False,
 )
-@router.get("/country/{country_id}", response_model=CountryResponse)
 async def get_country(
     country_id: str,
     service: LocationService = Depends(get_location_service),
-    storage=Depends(get_storage_service),
 ):
     try:
-        country = await service.get_country(country_id, storage=storage)
+        country = await service.get_country(country_id)
 
         if not country:
             raise HTTPException(404, "Country not found")
@@ -105,22 +101,19 @@ async def update_country(
     location_service: LocationService = Depends(get_location_service),
 ):
     try:
-        # Basic validation
-        name = country_data.name.strip()
-
         # Update country and return updated document
         updated = await location_service.update_country(country_id, country_data.model_dump())
         if not updated:
             raise HTTPException(status_code=404, detail="Country not found")
         country = await location_service.get_country(country_id)
-    
+
+        return {
+            "status": "success",
+            "message": "Country updated successfully",
+            "data": country
+        }
     except Exception as e:
         handle_exception(e)
-    return {
-        "status": "success",
-        "message": "Country updated successfully",
-        "data": country
-    }
 
 @router.patch(
     "/country/{country_id}/status",
@@ -139,14 +132,14 @@ async def toggle_country_status(
             raise HTTPException(status_code=404, detail="Country not found")
         country = await location_service.get_country(country_id)
 
+        return {
+            "status": "success",
+            "message": "Country status toggled successfully",
+            "data": country
+        }
+
     except Exception as e:
         handle_exception(e)
-
-    return {
-        "status": "success",
-        "message": "Country status toggled successfully",
-        "data": country
-    }
 
 @router.get("/countries", response_model=CountriesResponse,response_model_by_alias=False,)
 async def list_countries(
@@ -224,17 +217,8 @@ async def create_city(
     try:
         payload = await parse_request_payload(request, city_data)
 
-        image_bytes = None
-        content_type = None
-
         image_field = payload.pop("image", None)
-
-        if image_file:
-            image_bytes = await image_file.read()
-            content_type = image_file.content_type
-
-        elif image_field:
-            image_bytes, content_type = parse_base64_image(image_field)
+        image_bytes, content_type = await parse_image_input(image_file, image_field)
 
         city_model = CityCreate.model_validate(payload)
 
@@ -308,14 +292,14 @@ async def get_city(
         city = await location_service.get_city(city_id, storage=storage)
         if not city:
             raise HTTPException(status_code=404, detail="City not found")
+
+        return {
+            "status": "success",
+            "message": "City retrieved successfully",
+            "data": city
+        }
     except Exception as e:
         handle_exception(e)
-
-    return {
-        "status": "success",
-        "message": "City retrieved successfully",
-        "data": city
-    }   
 
 @router.patch(
     "/city/{city_id}",
@@ -333,51 +317,16 @@ async def update_city(
     
 ):
     try:
-        # -------- Parse payload --------
-        payload = {}
-
-        if city_data:
-            try:
-                payload = json.loads(city_data)
-            except json.JSONDecodeError:
-                raise HTTPException(status_code=400, detail="Invalid JSON in city_data")
-
-        else:
-            try:
-                body = await request.json()
-                payload = body.get("city_data", body)
-            except Exception:
-                payload = {}
-
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="Invalid payload format")
-
-        # -------- Extract image --------
-        image_bytes = None
-        content_type = None
+        payload = await parse_optional_request_payload(
+            request,
+            city_data,
+            form_field_name="city_data",
+            body_key="city_data",
+        )
 
         image_field = payload.pop("image", None)
+        image_bytes, content_type = await parse_image_input(image_file, image_field)
 
-        if image_file:
-            image_bytes = await image_file.read()
-            content_type = image_file.content_type
-
-        elif isinstance(image_field, str) and image_field.startswith("data:"):
-            match = re.match(
-                r"data:(?P<mime>[\w/+\-.]+);base64,(?P<data>.+)", image_field
-            )
-
-            if not match:
-                raise HTTPException(status_code=400, detail="Invalid image format")
-
-            content_type = match.group("mime")
-
-            try:
-                image_bytes = base64.b64decode(match.group("data"))
-            except Exception:
-                raise HTTPException(status_code=400, detail="Invalid base64 image")
-
-        # -------- Update city --------
         updated = await location_service.update_city(
             city_id=city_id,
             update_data=payload,
@@ -486,27 +435,25 @@ async def get_location(
 )
 async def update_location(
     location_id: str,
-    location_data: LocationCreate,
+    location_data: LocationUpdate,
     location_service: LocationService = Depends(get_location_service),
 ):
     try:
-        # Basic validation
-        name = location_data.name.strip()
-        city = location_data.city.strip()
-        country = location_data.country.strip()
-
         # Update location and return updated document
-        updated = await location_service.update_location(location_id, location_data.model_dump())
+        updated = await location_service.update_location(
+            location_id,
+            location_data.model_dump(exclude_none=True)
+        )
         if not updated:
             raise HTTPException(status_code=404, detail="Location not found")
         location = await location_service.get_location(location_id)
 
+        return {
+            "status": "success",
+            "message": "Location updated successfully",
+            "data": location
+        }
+
     except Exception as e:
         handle_exception(e)
-
-    return {
-        "status": "success",
-        "message": "Location updated successfully",
-        "data": location
-    }
 

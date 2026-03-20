@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta, timezone
-
 from starlette.exceptions import HTTPException
 import logging
 
@@ -10,9 +8,13 @@ from typing import Optional,Dict
 import re
 import uuid
 from app.services.storage_service import StorageService
+from app.repositories.location_repository import LocationRepository
 from pymongo.errors import DuplicateKeyError
 logger = logging.getLogger(__name__)
 class LocationService(BaseService):
+    def __init__(self, repository: LocationRepository):
+        super().__init__(repository.db)
+        self.repository = repository
   
 
     async def create_country(self, country_data: Dict):
@@ -22,14 +24,9 @@ class LocationService(BaseService):
         country_data["code"] = country_data["code"].upper().strip()
 
         # Optional pre-check for better error messages
-        existing = await self.db.countries.find_one(
-            {
-                "$or": [
-                    {"name": country_data["name"]},
-                    {"code": country_data["code"]}
-                ]
-            },
-            {"name": 1, "code": 1}
+        existing = await self.repository.find_country_conflict(
+            country_data["name"],
+            country_data["code"],
         )
 
         if existing:
@@ -51,7 +48,7 @@ class LocationService(BaseService):
 
         try:
             self.timestamps(country_data, is_new=True)
-            result = await self.db.countries.insert_one(country_data)
+            result = await self.repository.insert_country(country_data)
             return str(result.inserted_id)
 
         except DuplicateKeyError as e:
@@ -97,7 +94,7 @@ class LocationService(BaseService):
             update_data["code"] = update_data["code"].upper().strip()
 
         # Check if country exists
-        existing = await self.db.countries.find_one({"_id": country_obj_id})
+        existing = await self.repository.find_country_by_id(country_obj_id)
         if not existing:
             raise AppException(
                 status_code=404,
@@ -115,10 +112,11 @@ class LocationService(BaseService):
             conditions.append({"code": update_data["code"]})
 
         if conditions:
-            duplicate = await self.db.countries.find_one({
-                "_id": {"$ne": country_obj_id},
-                "$or": conditions
-            })
+            duplicate = await self.repository.find_country_conflict(
+                update_data.get("name", existing.get("name")),
+                update_data.get("code", existing.get("code")),
+                exclude_id=country_obj_id,
+            )
 
             if duplicate:
                 if duplicate.get("name") == update_data.get("name"):
@@ -139,10 +137,7 @@ class LocationService(BaseService):
 
         try:
             self.timestamps(update_data)
-            await self.db.countries.update_one(
-                {"_id": country_obj_id},
-                {"$set": update_data}
-            )
+            await self.repository.update_country(country_obj_id, update_data)
             return True
 
         except DuplicateKeyError as e:
@@ -169,7 +164,7 @@ class LocationService(BaseService):
         if not ObjectId.is_valid(country_id):
             raise AppException(400, "Invalid country id")
 
-        existing = await self.db.countries.find_one({"_id": ObjectId(country_id)})
+        existing = await self.repository.find_country_by_id(country_id)
         if not existing:
             raise AppException(
                     status_code=404,
@@ -182,15 +177,15 @@ class LocationService(BaseService):
         new_status = not existing.get("status", True)
         update_data = {"status": new_status}
         self.timestamps(update_data)
-        await self.db.countries.update_one({"_id": ObjectId(country_id)}, {"$set": update_data})
+        await self.repository.update_country(country_id, update_data)
         return True
 
     async def list_countries(
     self,
     page: int = 1,
     size: int = 10,
-    sort_by: str = "name",
-    sort_order: str = "asc",
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
     search: Optional[Dict] = None
 ):
 
@@ -295,14 +290,15 @@ class LocationService(BaseService):
 
         ]
 
-        cursor = self.db.countries.aggregate(pipeline)
+        cursor = self.repository.aggregate_countries(pipeline)
 
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
             items.append(doc)
 
-        total = await self.db.countries.count_documents(query)
+        
+        total = await self.repository.count_countries(query)
 
         return {
             "items": items,
@@ -316,7 +312,7 @@ class LocationService(BaseService):
         if not ObjectId.is_valid(country_id):
             raise AppException(status_code=400, message="Invalid country id", error_code="INVALID_COUNTRY_ID", field="country")
 
-        doc = await self.db.countries.find_one({"_id": ObjectId(country_id)})
+        doc = await self.repository.find_country_by_id(country_id)
         if not doc:
             raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
         doc["_id"] = str(doc["_id"])
@@ -346,7 +342,7 @@ class LocationService(BaseService):
         country_id = ObjectId(city_data["country"])
 
         # Check country exists
-        country = await self.db.countries.find_one({"_id": country_id})
+        country = await self.repository.find_country_by_id(country_id)
         if not country:
             raise AppException(
                 status_code=404,
@@ -356,10 +352,7 @@ class LocationService(BaseService):
             )
 
         # Check duplicate city in same country
-        existing = await self.db.cities.find_one({
-            "name": city_data["name"],
-            "country": country_id
-        })
+        existing = await self.repository.find_city_conflict(city_data["name"], country_id)
 
         if existing:
             raise AppException(
@@ -399,7 +392,7 @@ class LocationService(BaseService):
         try:
             
             self.timestamps(city_data, is_new=True)
-            result = await self.db.cities.insert_one(city_data)
+            result = await self.repository.insert_city(city_data)
             return str(result.inserted_id)
     
         except DuplicateKeyError:
@@ -429,7 +422,7 @@ class LocationService(BaseService):
 
         city_obj_id = ObjectId(city_id)
 
-        existing = await self.db.cities.find_one({"_id": city_obj_id})
+        existing = await self.repository.find_city_by_id(city_obj_id)
         if not existing:
             raise AppException(
                 status_code=404,
@@ -452,7 +445,7 @@ class LocationService(BaseService):
             country_id = ObjectId(country_id)
 
         # Check country exists
-        country = await self.db.countries.find_one({"_id": country_id})
+        country = await self.repository.find_country_by_id(country_id)
         if not country:
             raise AppException(
                 status_code=404,
@@ -462,11 +455,7 @@ class LocationService(BaseService):
             )
 
         # Check duplicate city
-        duplicate = await self.db.cities.find_one({
-            "name": name,
-            "country": country_id,
-            "_id": {"$ne": city_obj_id}
-        })
+        duplicate = await self.repository.find_city_conflict(name, country_id, exclude_id=city_obj_id)
 
         if duplicate:
             raise AppException(
@@ -510,10 +499,7 @@ class LocationService(BaseService):
         update_data["name"] = name
         update_data["country"] = country_id
         self.timestamps(update_data)
-        await self.db.cities.update_one(
-            {"_id": city_obj_id},
-            {"$set": update_data}
-        )
+        await self.repository.update_city(city_obj_id, update_data)
 
         return True
 
@@ -522,7 +508,7 @@ class LocationService(BaseService):
         if not ObjectId.is_valid(country_id):
             raise AppException(status_code=400, message="Invalid country id", error_code="INVALID_COUNTRY_ID", field="country")
 
-        country = await self.db.countries.find_one({"_id": ObjectId(country_id)})
+        country = await self.repository.find_country_by_id(country_id)
         if not country:
             raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
 
@@ -533,7 +519,7 @@ class LocationService(BaseService):
             }
         }
 
-        cursor = self.db.cities.find(query)
+        cursor = self.repository.find_cities(query)
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
@@ -548,7 +534,7 @@ class LocationService(BaseService):
         if not ObjectId.is_valid(city_id):
             raise AppException(status_code=400, message="Invalid city id", error_code="INVALID_CITY_ID", field="city")
 
-        doc = await self.db.cities.find_one({"_id": ObjectId(city_id)})
+        doc = await self.repository.find_city_by_id(city_id)
         if not doc:
             raise AppException(status_code=404, message="City not found", error_code="CITY_NOT_FOUND", field="city")
         # convert ObjectId to string for API responses
@@ -565,8 +551,8 @@ class LocationService(BaseService):
         self,
         page: int = 1,
         size: int = 10,
-        sort_by: str = "name",
-        sort_order: str = "asc",
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
         search: dict = None,
         storage: Optional[StorageService] = None
     ):
@@ -607,9 +593,7 @@ class LocationService(BaseService):
                     if ObjectId.is_valid(v):
                         query["country"] = ObjectId(v)
                     else:
-                        countries = await self.db.countries.find({
-                            "name": {"$regex": v, "$options": "i"}
-                        }).to_list(None)
+                        countries = await self.repository.find_countries_by_name(v)
 
                         query["country"] = {"$in": [c["_id"] for c in countries]}
 
@@ -666,7 +650,7 @@ class LocationService(BaseService):
             {"$limit": size}
         ]
 
-        cursor = self.db.cities.aggregate(pipeline)
+        cursor = self.repository.aggregate_cities(pipeline)
 
         items = []
         async for doc in cursor:
@@ -689,7 +673,7 @@ class LocationService(BaseService):
 
             items.append(doc)
 
-        total = await self.db.cities.count_documents(query)
+        total = await self.repository.count_cities(query)
 
         return {
             "items": items,
@@ -706,21 +690,21 @@ class LocationService(BaseService):
             raise HTTPException(status_code=400, detail="Invalid country or city ID")
 
         # Check if country exists
-        country = await self.db.countries.find_one({"_id": country_id})
+        country = await self.repository.find_country_by_id(country_id)
         if not country:
             raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
 
         # Check if city exists
-        city = await self.db.cities.find_one({"_id": city_id})
+        city = await self.repository.find_city_by_id(city_id)
         if not city:
             raise AppException(status_code=404, message="City not found", error_code="CITY_NOT_FOUND", field="city")
 
         # Check if location already exists in same city and country
-        existing_location = await self.db.locations.find_one({
-            "name": location_data["name"],
-            "city": city_id,
-            "country": country_id
-        })
+        existing_location = await self.repository.find_location_conflict(
+            location_data["name"],
+            city_id,
+            country_id,
+        )
 
         if existing_location:
             raise AppException(status_code=400, message="Location with this name already exists in the specified city and country", error_code="LOCATION_ALREADY_EXISTS", field="name") 
@@ -730,7 +714,7 @@ class LocationService(BaseService):
         location_data["city"] = city_id
         location_data["country"] = country_id
         self.timestamps(location_data, is_new=True)
-        result = await self.db.locations.insert_one(location_data)
+        result = await self.repository.insert_location(location_data)
 
         return str(result.inserted_id)
     
@@ -739,7 +723,7 @@ class LocationService(BaseService):
         if not ObjectId.is_valid(location_id):
             raise HTTPException(status_code=400, detail="Invalid location id")
 
-        doc = await self.db.locations.find_one({"_id": ObjectId(location_id)})
+        doc = await self.repository.find_location_by_id(location_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Location not found")
         # convert ObjectId to string for API responses
@@ -754,8 +738,8 @@ class LocationService(BaseService):
         self,
         page: int = 1,
         size: int = 10,
-        sort_by: str = "name",
-        sort_order: str = "asc",
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
         search: dict = None
     ):
 
@@ -781,9 +765,7 @@ class LocationService(BaseService):
                     if ObjectId.is_valid(v):
                         query["country"] = ObjectId(v)
                     else:
-                        countries = await self.db.countries.find({
-                            "name": {"$regex": v, "$options": "i"}
-                        }).to_list(None)
+                        countries = await self.repository.find_countries_by_name(v)
 
                         query["country"] = {"$in": [c["_id"] for c in countries]}
 
@@ -791,9 +773,7 @@ class LocationService(BaseService):
                     if ObjectId.is_valid(v):
                         query["city"] = ObjectId(v)
                     else:
-                        cities = await self.db.cities.find({
-                            "name": {"$regex": v, "$options": "i"}
-                        }).to_list(None)
+                        cities = await self.repository.find_locations_by_city_name(v)
 
                         query["city"] = {"$in": [c["_id"] for c in cities]}
 
@@ -855,14 +835,14 @@ class LocationService(BaseService):
             {"$limit": size}
         ]
 
-        cursor = self.db.locations.aggregate(pipeline)
+        cursor = self.repository.aggregate_locations(pipeline)
 
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
             items.append(doc)
 
-        total = await self.db.locations.count_documents(query)
+        total = await self.repository.count_locations(query)
 
         return {
             "items": items,
@@ -881,7 +861,7 @@ class LocationService(BaseService):
                 field="location"
             )
 
-        existing = await self.db.locations.find_one({"_id": ObjectId(location_id)})
+        existing = await self.repository.find_location_by_id(location_id)
         if not existing:
             raise AppException(
                 status_code=404,
@@ -907,12 +887,12 @@ class LocationService(BaseService):
 
         # Conflict check
         if "name" in update_data or "city" in update_data or "country" in update_data:
-            conflict = await self.db.locations.find_one({
-                "name": name,
-                "city": city_id,
-                "country": country_id,
-                "_id": {"$ne": ObjectId(location_id)}
-            })
+            conflict = await self.repository.find_location_conflict(
+                name,
+                city_id,
+                country_id,
+                exclude_id=location_id,
+            )
 
             if conflict:
                 raise AppException(
@@ -924,10 +904,7 @@ class LocationService(BaseService):
 
         if update_data:
             self.timestamps(update_data)
-            await self.db.locations.update_one(
-                {"_id": ObjectId(location_id)},
-                {"$set": update_data}
-            )
+            await self.repository.update_location(location_id, update_data)
 
         return True
 

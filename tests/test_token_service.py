@@ -6,6 +6,7 @@ import asyncio
 
 from app.services.token_service import TokenService
 from app.models.token_model import Token
+from app.repositories.token_repository import TokenRepository
 
 
 class FakeCollection:
@@ -46,7 +47,7 @@ async def test_create_verify_revoke(monkeypatch):
     monkeypatch.setattr("app.services.token_service.JWTHandler.decode_token", lambda token: {"sub": "1", "type": "refresh"})
 
     db = FakeDB()
-    svc = TokenService(db)
+    svc = TokenService(TokenRepository(db))
 
     token_obj = await svc.create_token(identity="1", additional_claims={"email": "a@b"})
     assert token_obj.token == "token123"

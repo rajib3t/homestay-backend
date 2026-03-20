@@ -2,9 +2,12 @@ from app.services.base_service import BaseService
 from app.models.token_model import Token, TokenType
 from app.core.security import JWTHandler
 from datetime import datetime, timezone
-from bson import ObjectId
+from app.repositories.token_repository import TokenRepository
 
 class TokenService(BaseService):
+    def __init__(self, repository: TokenRepository):
+        super().__init__(repository.db)
+        self.repository = repository
 
     async def create_token(self, identity: str, additional_claims: dict = None, expires_at=None, absolute_expiry=None):
         """Creates a refresh token and saves it to the database.
@@ -27,7 +30,7 @@ class TokenService(BaseService):
             additional_claims=additional_claims
         )
 
-        await self.db[Token.COLLECTION_NAME].insert_one(token_obj.to_mongo_dict())
+        await self.repository.insert(token_obj.to_mongo_dict())
         return token_obj
 
     async def verify_token(self, token_string: str):
@@ -39,7 +42,7 @@ class TokenService(BaseService):
                 return False, None, "Invalid token type"
             
             # Check database for revocation
-            doc = await self.db[Token.COLLECTION_NAME].find_one({"token": token_string})
+            doc = await self.repository.find_by_token(token_string)
             if not doc:
                 return False, None, "Token not found"
             
@@ -56,7 +59,4 @@ class TokenService(BaseService):
 
     async def revoke_token(self, token_string: str):
         """Revokes a refresh token."""
-        await self.db[Token.COLLECTION_NAME].update_one(
-            {"token": token_string},
-            {"$set": {"is_revoked": True}}
-        )
+        await self.repository.revoke(token_string)

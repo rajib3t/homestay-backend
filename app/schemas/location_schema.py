@@ -40,7 +40,7 @@ class City(BaseModel):
 
 class Country(BaseModel):
     name: str
-    code: str = Field(..., min_length=2, max_length=3, uppercase=True)
+    code: str = Field(..., min_length=2, max_length=3)
     dial_code: int = Field(..., ge=1, le=999)
     cities: list[City] = Field(default_factory=list)
     status: bool = True
@@ -50,7 +50,7 @@ class Country(BaseModel):
 class CountryOut(BaseModel):
     id: str = Field(..., alias="_id")
     name: str
-    code: str = Field(..., min_length=2, max_length=3, uppercase=True)
+    code: str = Field(..., min_length=2, max_length=3)
     dial_code: int = Field(..., ge=1, le=999)
     status: bool = True
     city_count: int = 0

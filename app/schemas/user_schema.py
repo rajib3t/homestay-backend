@@ -40,6 +40,7 @@ class LoginResponse(BaseResponse):
 
 class RefreshData(BaseModel):
     access_token: str
+    refresh_token: str
 
 class RefreshResponse(BaseResponse):
     data: RefreshData

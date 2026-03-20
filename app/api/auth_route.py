@@ -171,7 +171,7 @@ async def refresh_token(
         try:
             body = await request.json()
             refresh_token_string = body.get("refresh_token")
-        except:
+        except Exception:
             pass
 
     if not refresh_token_string:

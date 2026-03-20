@@ -1,19 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, File, UploadFile, Body
-from app.core.exceptions import AppException
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.deps import get_attribute_service, get_storage_service
 from app.models.attribute_model import CreateAmenity, CreateFacility, CreateRoomType, ListAmenities, ListFacilities, ListRoomTypes, UpdateAmenity, UpdateAmenityStatus, UpdateFacility, UpdateFacilityStatus, UpdateRoomType, UpdateRoomTypeStatus
 from app.schemas.attribute_schema import AmenitiesResponse, AmenityResponse, FacilityResponse, FacilitiesResponse, RoomTypeResponse, RoomTypesResponse
-from app.services import storage_service
-from app.services import attribute_service
 from app.services.attribute_service import AttributeService
 from app.services.storage_service import StorageService
-from uuid import uuid4
 from app.utils.api_utils import (
-    decode_data_url,
     handle_exception,
-    parse_request_payload,
-    parse_base64_image,
-    build_search
+    build_search,
+    replace_data_url_asset,
+    upload_data_url_asset,
 )
 
 router = APIRouter(prefix="/api/v1/attributes", tags=["Attributes"])
@@ -42,13 +37,12 @@ async def create_amenity(
         icon_value = amenity_data.icon
 
         if icon_value and icon_value.startswith("data:"):
-            raw, mime, ext = decode_data_url(icon_value)
-            key_name = amenity_data.name.lower().replace(" ", "_")
-            key = f"amenities/{key_name}_{uuid4().hex}{ext}"
-
-            await storage_service.upload_bytes(key, raw, content_type=mime)
-
-            new_amenity["icon"] = key
+            new_amenity["icon"] = await upload_data_url_asset(
+                storage_service,
+                icon_value,
+                "amenities",
+                amenity_data.name,
+            )
         else:
             new_amenity["icon"] = icon_value
 
@@ -148,23 +142,14 @@ async def update_amenity(
 
         if isinstance(icon_value, str) and icon_value.startswith("data:"):
             existing = await attribute_service.get_amenity(amenity_id)
-            old_icon_key = existing.get("icon")
-
-            raw, mime, ext = decode_data_url(icon_value)
-
-            name_for_key = update_data.get("name") or existing.get("name") or uuid4().hex
-            key_name = name_for_key.lower().replace(" ", "_")
-            key = f"amenities/{key_name}_{uuid4().hex}{ext}"
-
-            await storage_service.upload_bytes(key, raw, content_type=mime)
-
-            update_data["icon"] = key
-
-            if old_icon_key:
-                try:
-                    await storage_service.delete_object(old_icon_key)
-                except Exception:
-                    pass
+            name_for_key = update_data.get("name") or existing.get("name") or "amenity"
+            update_data["icon"] = await replace_data_url_asset(
+                storage_service,
+                icon_value,
+                "amenities",
+                name_for_key,
+                existing.get("icon"),
+            )
 
         updated_amenity = await attribute_service.update_amenity(
             amenity_id,
@@ -193,31 +178,9 @@ async def update_amenity_status(
     attribute_service: AttributeService = Depends(get_attribute_service),
 ) -> AmenityResponse:
     try:
-        # Try to read JSON body and accept either `status` or `status_update` keys.
-        status_value = status_data.status
-        try:
-            # If body is empty or not JSON, this will raise an error which we catch and treat as no body provided.
-            await status_data.model_dump()
-        except Exception:
-            # body might be empty or not JSON (e.g., form); ignore and treat as no body
-            status_value = None
-
-        if status_value is None:
-            # No explicit status provided: toggle
-            updated = await attribute_service.toggle_amenity_status(amenity_id)
-            if not updated:
-                raise HTTPException(status_code=404, detail="Amenity not found")
-            amenity = await attribute_service.get_amenity(amenity_id)
-            return {
-                "status": "success",
-                "message": "Amenity status toggled successfully",
-                "data": amenity,
-            }
-
-        # Explicit status provided in JSON body: set it
         updated_amenity = await attribute_service.update_amenity(
             amenity_id,
-            {"status": status_value},
+            {"status": status_data.status},
             storage=None,
         )
 
@@ -238,33 +201,27 @@ async def update_amenity_status(
 async def create_facility(
     facility_data: CreateFacility,
     attribute_service: AttributeService = Depends(get_attribute_service),
-
     storage: StorageService = Depends(get_storage_service),
-
 ) -> FacilityResponse:
-        try:
-            new_facility = {
-                "name": facility_data.name,
-                "icon": facility_data.icon,
-                "status": facility_data.status
-            }
+    try:
+        new_facility = {
+            "name": facility_data.name,
+            "icon": facility_data.icon,
+            "status": facility_data.status
+        }
 
-            
+        facility_id = await attribute_service.create_facility(new_facility, storage)
 
-            
+        facility = await attribute_service.get_facility(facility_id)
 
-            facility_id = await attribute_service.create_facility(new_facility, storage)
+        return {
+            "status": "success",
+            "message": "Facility created successfully",
+            "data": facility
+        }
 
-            facility = await attribute_service.get_facility(facility_id)
-
-            return {
-                "status": "success",
-                "message": "Facility created successfully",
-                "data": facility
-            }
-
-        except Exception as e:
-            handle_exception(e)
+    except Exception as e:
+        handle_exception(e)
 
     
 @router.get(
@@ -349,23 +306,14 @@ async def update_facility(
 
         if isinstance(icon_value, str) and icon_value.startswith("data:"):
             existing = await attribute_service.get_facility(facility_id)
-            old_icon_key = existing.get("icon")
-
-            raw, mime, ext = decode_data_url(icon_value)
-
-            name_for_key = update_data.get("name") or existing.get("name") or uuid4().hex
-            key_name = name_for_key.lower().replace(" ", "_")
-            key = f"facilities/{key_name}_{uuid4().hex}{ext}"
-
-            await storage_service.upload_bytes(key, raw, content_type=mime)
-
-            update_data["icon"] = key
-
-            if old_icon_key:
-                try:
-                    await storage_service.delete_object(old_icon_key)
-                except Exception:
-                    pass
+            name_for_key = update_data.get("name") or existing.get("name") or "facility"
+            update_data["icon"] = await replace_data_url_asset(
+                storage_service,
+                icon_value,
+                "facilities",
+                name_for_key,
+                existing.get("icon"),
+            )
 
         updated_facility = await attribute_service.update_facility(
             facility_id,
@@ -382,29 +330,6 @@ async def update_facility(
     except Exception as e:
         handle_exception(e)
     
-@router.get(
-    "/facility/{facility_id}",
-    response_model=FacilityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_facility(
-    facility_id: str,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage: StorageService = Depends(get_storage_service)
-) -> FacilityResponse:
-    try:
-        facility = await attribute_service.get_facility(facility_id, storage)
-        if not facility:
-            raise HTTPException(status_code=404, detail="Facility not found")
-        return {
-            "status": "success",
-            "message": "Facility retrieved successfully",
-            "data": facility
-        }
-    except Exception as e:
-        handle_exception(e)
-
 @router.patch(
     "/facility/{facility_id}/status",
     response_model=FacilityResponse,
@@ -417,31 +342,9 @@ async def update_facility_status(
     attribute_service: AttributeService = Depends(get_attribute_service),
 ) -> FacilityResponse:
     try:
-        # Try to read JSON body and accept either `status` or `status_update` keys.
-        status_value = status_data.status
-        try:
-            # If body is empty or not JSON, this will raise an error which we catch and treat as no body provided.
-            await status_data.model_dump()
-        except Exception:
-            # body might be empty or not JSON (e.g., form); ignore and treat as no body
-            status_value = None
-
-        if status_value is None:
-            # No explicit status provided: toggle
-            updated = await attribute_service.toggle_facility_status(facility_id)
-            if not updated:
-                raise HTTPException(status_code=404, detail="Facility not found")
-            facility = await attribute_service.get_facility(facility_id)
-            return {
-                "status": "success",
-                "message": "Facility status toggled successfully",
-                "data": facility,
-            }
-
-        # Explicit status provided in JSON body: set it
         updated_facility = await attribute_service.update_facility(
             facility_id,
-            {"status": status_value},
+            {"status": status_data.status},
             storage=None,
         )
 
@@ -586,31 +489,9 @@ async def update_room_type_status(
     attribute_service: AttributeService = Depends(get_attribute_service),
 ) -> RoomTypeResponse:
     try:
-        # Try to read JSON body and accept either `status` or `status_update` keys.
-        status_value = status_data.status
-        try:
-            # If body is empty or not JSON, this will raise an error which we catch and treat as no body provided.
-            await status_data.model_dump()
-        except Exception:
-            # body might be empty or not JSON (e.g., form); ignore and treat as no body
-            status_value = None
-
-        if status_value is None:
-            # No explicit status provided: toggle
-            updated = await attribute_service.toggle_room_type_status(room_type_id)
-            if not updated:
-                raise HTTPException(status_code=404, detail="Room type not found")
-            room_type = await attribute_service.get_room_type(room_type_id)
-            return {
-                "status": "success",
-                "message": "Room type status toggled successfully",
-                "data": room_type,
-            }
-
-        # Explicit status provided in JSON body: set it
         updated_room_type = await attribute_service.update_room_type(
             room_type_id,
-            {"status": status_value},
+            {"status": status_data.status},
         )
 
         return {

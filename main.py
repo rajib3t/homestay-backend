@@ -9,15 +9,12 @@ from app.core.logging_config import configure_logging
 from app.core.exceptions import AppException
 from app.api.router import api_router
 from app.core.config import settings
-from app.middleware.jwt_middleware import JWTMiddleware
 
 
 class Application:
     def __init__(self) -> None:
         self.app = FastAPI(lifespan=self._lifespan)
 
-        # Do not register JWT middleware; use dependency-based auth via `get_current_user`.
-        # If global checks are needed, re-enable middleware here.
         self._register_middleware()
         self._register_exception_handlers()
         self._register_routes()
@@ -57,7 +54,8 @@ class Application:
             logger.exception("Error while closing MongoDB connection")
 
     def _register_middleware(self):
-        self.app.add_middleware(JWTMiddleware)
+        # Authentication is enforced with `get_current_user` dependencies.
+        return None
 
     def _register_exception_handlers(self):
         @self.app.exception_handler(AppException)

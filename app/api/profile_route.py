@@ -22,7 +22,7 @@ async def get_profile(
 @router.put("", response_model=ProfileResponse, response_model_by_alias=False)
 async def update_profile(
     user_id: str = Depends(get_current_user),
-    update_data: UserUpdate = None,
+    update_data: UserUpdate = ..., 
     user_service: UserService = Depends(get_user_service),
 ):
     # Filter out None values to avoid overwriting with nulls

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from bson import ObjectId
 
+from app.repositories.attribute_repository import AttributeRepository
 from app.services.attribute_service import AttributeService
 
 
@@ -32,13 +33,15 @@ class FakeCollection:
 
 class FakeDB:
     def __init__(self):
+        self.amenities = FakeCollection()
         self.facilities = FakeCollection()
+        self.room_types = FakeCollection()
 
 
 @pytest.mark.asyncio
 async def test_update_facility_updates_icon_and_name():
     db = FakeDB()
-    service = AttributeService(db)
+    service = AttributeService(AttributeRepository(db))
 
     facility_id = await service.create_facility(
         {"name": "Pool", "icon": "facilities/pool-old.png", "status": True}
@@ -57,7 +60,7 @@ async def test_update_facility_updates_icon_and_name():
 @pytest.mark.asyncio
 async def test_update_facility_requires_update_fields():
     db = FakeDB()
-    service = AttributeService(db)
+    service = AttributeService(AttributeRepository(db))
 
     facility_id = await service.create_facility(
         {"name": "Gym", "icon": None, "status": True}
@@ -65,3 +68,34 @@ async def test_update_facility_requires_update_fields():
 
     with pytest.raises(Exception):
         await service.update_facility(facility_id, {})
+
+
+@pytest.mark.asyncio
+async def test_create_and_get_amenity_uses_repository_backed_service():
+    db = FakeDB()
+    service = AttributeService(AttributeRepository(db))
+
+    amenity_id = await service.create_amenity(
+        {"name": "Wifi", "icon": None, "status": True}
+    )
+
+    amenity = await service.get_amenity(amenity_id)
+
+    assert amenity["_id"] == amenity_id
+    assert amenity["name"] == "Wifi"
+    assert amenity["status"] is True
+
+
+@pytest.mark.asyncio
+async def test_toggle_room_type_status_flips_value():
+    db = FakeDB()
+    service = AttributeService(AttributeRepository(db))
+
+    room_type_id = await service.create_room_type(
+        {"name": "Deluxe", "capacity": 2, "status": True}
+    )
+
+    updated = await service.toggle_room_type_status(room_type_id)
+
+    assert updated["_id"] == room_type_id
+    assert updated["status"] is False

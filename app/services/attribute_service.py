@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 from pymongo.errors import DuplicateKeyError
 from app.services.storage_service import StorageService
 from bson import ObjectId
+from app.repositories.attribute_repository import AttributeRepository
 from app.schemas.attribute_schema import Amenity, Facility, RoomType
 from app.utils.api_utils import decode_data_url
 logger = logging.getLogger(__name__)
@@ -20,6 +21,10 @@ class AttributeService(BaseService):
     This is a placeholder implementation. Actual logic for creating and listing attributes
     should be implemented here, interacting with the database as needed.
     """
+
+    def __init__(self, repository: AttributeRepository):
+        super().__init__(repository.db)
+        self.repository = repository
 
     async def create_amenity(
             self, 
@@ -42,7 +47,7 @@ class AttributeService(BaseService):
             
 
             self.timestamps(new_amenity, is_new=True)
-            result = await self.db.amenities.insert_one(new_amenity)
+            result = await self.repository.insert_one("amenities", new_amenity)
             return str(result.inserted_id)
         except DuplicateKeyError as e:
 
@@ -77,10 +82,9 @@ class AttributeService(BaseService):
         if not ObjectId.is_valid(amenity_id):
             raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
         
-        amenity = await self.db.amenities.find_one({"_id": ObjectId(amenity_id)})
+        amenity = await self.repository.find_by_id("amenities", amenity_id)
         if not amenity:
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
-        string_id = str(amenity["_id"])
         # convert ObjectId to string for API responses
         amenity["_id"] = str(amenity["_id"])
         return amenity
@@ -136,8 +140,8 @@ class AttributeService(BaseService):
                     query[k] = v
 
     
-        cursor = self.db.amenities.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
-        total = await self.db.amenities.count_documents(query)
+        cursor = self.repository.find_many("amenities", query).sort(sort_by, sort_direction).skip(skip).limit(size)
+        total = await self.repository.count_documents("amenities", query)
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
@@ -164,10 +168,7 @@ class AttributeService(BaseService):
 
         self.timestamps(data, is_new=False)
 
-        result = await self.db.amenities.update_one(
-            {"_id": ObjectId(amenity_id)},
-            {"$set": data}
-        )
+        result = await self.repository.update_by_id("amenities", amenity_id, data)
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
@@ -184,16 +185,13 @@ class AttributeService(BaseService):
         if not ObjectId.is_valid(amenity_id):
             raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
 
-        amenity = await self.db.amenities.find_one({"_id": ObjectId(amenity_id)})
+        amenity = await self.repository.find_by_id("amenities", amenity_id)
         if not amenity:
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
 
         new_status = not amenity.get("status", True)
         self.timestamps(amenity, is_new=False)
-        result = await self.db.amenities.update_one(
-            {"_id": ObjectId(amenity_id)},
-            {"$set": {"status": new_status}}
-        )
+        result = await self.repository.update_by_id("amenities", amenity_id, {"status": new_status})
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Amenity not found during status toggle", error_code="AMENITY_NOT_FOUND_TOGGLE", field="amenity")
@@ -227,7 +225,7 @@ class AttributeService(BaseService):
 
                 new_facility["icon"] = key
             self.timestamps(new_facility, is_new=True)
-            result = await self.db.facilities.insert_one(new_facility)
+            result = await self.repository.insert_one("facilities", new_facility)
             return str(result.inserted_id)
         except DuplicateKeyError as e:
 
@@ -262,12 +260,11 @@ class AttributeService(BaseService):
         if not ObjectId.is_valid(facility_id):
             raise AppException(status_code=400, message="Invalid facility id", error_code="INVALID_FACILITY_ID", field="facility")
         
-        facility = await self.db.facilities.find_one({"_id": ObjectId(facility_id)})
+        facility = await self.repository.find_by_id("facilities", facility_id)
         if not facility:
             raise AppException(status_code=404, message="Facility not found", error_code="FACILITY_NOT_FOUND", field="facility")
-        string_id = str(facility["_id"])
         # convert ObjectId to string for API responses
-        facility["_id"] = string_id
+        facility["_id"] = str(facility["_id"])
         if storage and "icon" in facility:
             try:
                 facility["icon"] = storage.generate_presigned_url(facility["icon"])
@@ -326,8 +323,8 @@ class AttributeService(BaseService):
                     query[k] = v
 
     
-        cursor = self.db.facilities.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
-        total = await self.db.facilities.count_documents(query)
+        cursor = self.repository.find_many("facilities", query).sort(sort_by, sort_direction).skip(skip).limit(size)
+        total = await self.repository.count_documents("facilities", query)
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
@@ -355,10 +352,7 @@ class AttributeService(BaseService):
 
         self.timestamps(data, is_new=False)
 
-        result = await self.db.facilities.update_one(
-            {"_id": ObjectId(facility_id)},
-            {"$set": data}
-        )
+        result = await self.repository.update_by_id("facilities", facility_id, data)
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Facility not found", error_code="FACILITY_NOT_FOUND", field="facility")
@@ -371,16 +365,13 @@ class AttributeService(BaseService):
         if not ObjectId.is_valid(facility_id):
             raise AppException(status_code=400, message="Invalid facility id", error_code="INVALID_FACILITY_ID", field="facility")
 
-        facility = await self.db.facilities.find_one({"_id": ObjectId(facility_id)})
+        facility = await self.repository.find_by_id("facilities", facility_id)
         if not facility:
             raise AppException(status_code=404, message="Facility not found", error_code="FACILITY_NOT_FOUND", field="facility")
 
         new_status = not facility.get("status", True)
         self.timestamps(facility, is_new=False)
-        result = await self.db.facilities.update_one(
-            {"_id": ObjectId(facility_id)},
-            {"$set": {"status": new_status}}
-        )
+        result = await self.repository.update_by_id("facilities", facility_id, {"status": new_status})
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Facility not found during status toggle", error_code="FACILITY_NOT_FOUND_TOGGLE", field="facility")
@@ -402,7 +393,7 @@ class AttributeService(BaseService):
                 "status": status
             }
             self.timestamps(new_room_type, is_new=True)
-            result = await self.db.room_types.insert_one(new_room_type)
+            result = await self.repository.insert_one("room_types", new_room_type)
             return str(result.inserted_id)
         except DuplicateKeyError as e:
 
@@ -437,12 +428,11 @@ class AttributeService(BaseService):
         if not ObjectId.is_valid(room_type_id):
             raise AppException(status_code=400, message="Invalid room type id", error_code="INVALID_ROOM_TYPE_ID", field="room_type")
         
-        room_type = await self.db.room_types.find_one({"_id": ObjectId(room_type_id)})
+        room_type = await self.repository.find_by_id("room_types", room_type_id)
         if not room_type:
             raise AppException(status_code=404, message="Room type not found", error_code="ROOM_TYPE_NOT_FOUND", field="room_type")
-        string_id = str(room_type["_id"])
         # convert ObjectId to string for API responses
-        room_type["_id"] = string_id
+        room_type["_id"] = str(room_type["_id"])
         return room_type
     
 
@@ -495,8 +485,8 @@ class AttributeService(BaseService):
                     query[k] = v
 
     
-        cursor = self.db.room_types.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
-        total = await self.db.room_types.count_documents(query)
+        cursor = self.repository.find_many("room_types", query).sort(sort_by, sort_direction).skip(skip).limit(size)
+        total = await self.repository.count_documents("room_types", query)
         items = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
@@ -517,10 +507,7 @@ class AttributeService(BaseService):
 
         self.timestamps(data, is_new=False)
 
-        result = await self.db.room_types.update_one(
-            {"_id": ObjectId(room_type_id)},
-            {"$set": data}
-        )
+        result = await self.repository.update_by_id("room_types", room_type_id, data)
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Room type not found", error_code="ROOM_TYPE_NOT_FOUND", field="room_type")
@@ -532,16 +519,13 @@ class AttributeService(BaseService):
         if not ObjectId.is_valid(room_type_id):
             raise AppException(status_code=400, message="Invalid room type id", error_code="INVALID_ROOM_TYPE_ID", field="room_type")
 
-        room_type = await self.db.room_types.find_one({"_id": ObjectId(room_type_id)})
+        room_type = await self.repository.find_by_id("room_types", room_type_id)
         if not room_type:
             raise AppException(status_code=404, message="Room type not found", error_code="ROOM_TYPE_NOT_FOUND", field="room_type")
 
         new_status = not room_type.get("status", True)
         self.timestamps(room_type, is_new=False)
-        result = await self.db.room_types.update_one(
-            {"_id": ObjectId(room_type_id)},
-            {"$set": {"status": new_status}}
-        )
+        result = await self.repository.update_by_id("room_types", room_type_id, {"status": new_status})
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Room type not found during status toggle", error_code="ROOM_TYPE_NOT_FOUND_TOGGLE", field="room_type")

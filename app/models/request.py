@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, ClassVar, List
 
 
@@ -11,7 +11,8 @@ class ListRequest(BaseModel):
     # Child classes can override this to provide their own allowed sort fields
     _allowed_sort_fields: ClassVar[List[str]] = ['name', 'code', 'dial_code']
 
-    @validator('sort_by')
+    @field_validator('sort_by')
+    @classmethod
     def _validate_sort_by(cls, v):
         if v is None:
             return v
@@ -19,7 +20,8 @@ class ListRequest(BaseModel):
             raise ValueError(f"sort_by must be one of: {cls._allowed_sort_fields}")
         return v
 
-    @validator('sort_order')
+    @field_validator('sort_order')
+    @classmethod
     def _validate_sort_order(cls, v):
         if v not in ('asc', 'desc'):
             raise ValueError("sort_order must be 'asc' or 'desc'")

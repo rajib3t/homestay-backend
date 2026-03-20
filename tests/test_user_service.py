@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from app.services.user_service import UserService
 from app.core.exceptions import AppException
+from app.repositories.user_repository import UserRepository
 
 
 class FakeCollection:
@@ -47,7 +48,7 @@ class FakeDB:
 @pytest.mark.asyncio
 async def test_create_get_update_user():
     db = FakeDB()
-    svc = UserService(db)
+    svc = UserService(UserRepository(db))
 
     # create user
     user_data = {
@@ -65,16 +66,22 @@ async def test_create_get_update_user():
 
     user = await svc.get_user(user_id)
     assert user["email"] == "test@example.com"
+    assert "password" not in user
 
     # update user
     updated = await svc.update_user(user_id, {"first_name": "Updated"})
     assert updated["first_name"] == "Updated"
+    assert "password" not in updated
+
+    authenticated = await svc.authenticate_user("test@example.com", "secret")
+    assert authenticated["email"] == "test@example.com"
+    assert "password" not in authenticated
 
 
 @pytest.mark.asyncio
 async def test_duplicate_email():
     db = FakeDB()
-    svc = UserService(db)
+    svc = UserService(UserRepository(db))
 
     user_data = {
         "email": "dup@example.com",

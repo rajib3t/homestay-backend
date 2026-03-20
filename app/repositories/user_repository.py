@@ -29,5 +29,5 @@ class UserRepository(BaseRepository):
             {"$set": update_data},
         )
     
-    async def get_vendor_users(self):
+    async def get_vendor_users(self, ):
         return await self.collection.find({"role": "vendor"}).to_list(length=None)

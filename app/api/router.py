@@ -2,7 +2,7 @@ import pkgutil
 import importlib
 from fastapi import APIRouter
 
-api_router = APIRouter()
+api_router = APIRouter(prefix="/api/v1")
 
 
 def load_routes():

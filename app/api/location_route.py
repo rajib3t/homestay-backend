@@ -26,7 +26,7 @@ from app.utils.api_utils import (
     build_search
 )
 
-router = APIRouter(prefix="/api/v1/locations", tags=["Locations"])
+router = APIRouter(prefix="/locations", tags=["Locations"])
 
 logger = logging.getLogger(__name__)
 

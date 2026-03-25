@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import asyncio
 
+from app.repositories.redis_token_repository import RedisTokenRepository
 from app.services.token_service import TokenService
 from app.models.token_model import Token
 from app.repositories.token_repository import TokenRepository
@@ -40,6 +41,27 @@ class FakeDB(dict):
         self[Token.COLLECTION_NAME] = FakeCollection()
 
 
+class FakeRedis:
+    def __init__(self):
+        self.storage = {}
+
+    async def set(self, key, value, ex=None):
+        self.storage[key] = {"value": value, "ex": ex}
+        return True
+
+    async def get(self, key):
+        item = self.storage.get(key)
+        if not item:
+            return None
+        return item["value"]
+
+    async def delete(self, key):
+        if key in self.storage:
+            del self.storage[key]
+            return 1
+        return 0
+
+
 @pytest.mark.asyncio
 async def test_create_verify_revoke(monkeypatch):
     # Patch JWTHandler.create_refresh_token and decode_token
@@ -57,4 +79,26 @@ async def test_create_verify_revoke(monkeypatch):
 
     await svc.revoke_token("token123")
     is_valid2, obj2, err2 = await svc.verify_token("token123")
+    assert not is_valid2
+
+
+@pytest.mark.asyncio
+async def test_create_verify_revoke_with_redis_session_store(monkeypatch):
+    monkeypatch.setattr("app.services.token_service.JWTHandler.create_refresh_token", lambda data, additional_claims=None, expires_at=None: ("redis-token", datetime.now(timezone.utc) + timedelta(days=7)))
+    monkeypatch.setattr("app.services.token_service.JWTHandler.decode_token", lambda token: {"sub": "1", "type": "refresh"})
+
+    db = FakeDB()
+    redis_repository = RedisTokenRepository(FakeRedis(), key_prefix="test_refresh")
+    svc = TokenService(redis_repository)
+
+    token_obj = await svc.create_token(identity="1", additional_claims={"email": "redis@test.dev"})
+    assert token_obj.token == "redis-token"
+    assert db[Token.COLLECTION_NAME].storage == {}
+
+    is_valid, obj, err = await svc.verify_token("redis-token")
+    assert is_valid and obj is not None
+    assert obj.additional_claims["email"] == "redis@test.dev"
+
+    await svc.revoke_token("redis-token")
+    is_valid2, obj2, err2 = await svc.verify_token("redis-token")
     assert not is_valid2

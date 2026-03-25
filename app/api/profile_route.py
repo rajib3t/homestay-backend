@@ -5,7 +5,7 @@ from app.services.user_service import UserService
 from app.deps import get_user_service, get_current_user
 from app.core.exceptions import AppException
 
-router = APIRouter(prefix="/api/v1/profile", tags=["Profile"])
+router = APIRouter(prefix="/profile", tags=["Profile"])
 
 @router.get("", response_model=ProfileResponse, response_model_by_alias=False)
 async def get_profile(

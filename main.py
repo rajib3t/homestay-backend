@@ -6,6 +6,7 @@ import logging
 
 from app.core.database import connect_to_mongo, close_mongo_connection, get_database
 from app.core.logging_config import configure_logging
+from app.core.redis import connect_to_redis, close_redis_connection
 from app.core.exceptions import AppException
 from app.api.router import api_router
 from app.core.config import settings
@@ -32,6 +33,7 @@ class Application:
         try:
             await connect_to_mongo()
             logger.info("MongoDB connected")
+            await connect_to_redis()
             # Ensure required indexes exist (run once at startup)
             try:
                 db = get_database()
@@ -48,10 +50,12 @@ class Application:
 
         # Shutdown
         try:
+            await close_redis_connection()
+            logger.info("Redis connection closed")
             await close_mongo_connection()
             logger.info("MongoDB connection closed")
         except Exception:
-            logger.exception("Error while closing MongoDB connection")
+            logger.exception("Error while closing application connections")
 
     def _register_middleware(self):
         # Authentication is enforced with `get_current_user` dependencies.

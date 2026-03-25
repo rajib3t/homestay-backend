@@ -7,10 +7,12 @@ from app.services.location_service import LocationService
 from app.services.storage_service import StorageService
 from app.repositories.attribute_repository import AttributeRepository
 from app.repositories.location_repository import LocationRepository
+from app.repositories.redis_token_repository import RedisTokenRepository
 from app.repositories.token_repository import TokenRepository
 from app.repositories.user_repository import UserRepository
 from app.core.security import JWTHandler
 from app.core.config import settings
+from app.core.redis import get_redis
 from app.core.exceptions import AppException
 
 
@@ -19,7 +21,15 @@ def get_user_service(db=Depends(get_database)):
 
 
 def get_token_service(db=Depends(get_database)):
-    return TokenService(TokenRepository(db))
+    redis_client = get_redis()
+    if redis_client is not None:
+        session_repository = RedisTokenRepository(
+            redis_client,
+            key_prefix=settings.REDIS_TOKEN_PREFIX,
+        )
+        return TokenService(session_repository)
+
+    return TokenService(TokenRepository(db), db=db)
 
 
 

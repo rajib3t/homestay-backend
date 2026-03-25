@@ -9,7 +9,7 @@ from app.core.security import JWTHandler
 from typing import Optional
 from app.core.config import settings
 
-router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 # SESSION CONFIG

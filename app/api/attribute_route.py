@@ -11,7 +11,7 @@ from app.utils.api_utils import (
     upload_data_url_asset,
 )
 
-router = APIRouter(prefix="/api/v1/attributes", tags=["Attributes"])
+router = APIRouter(prefix="/attributes", tags=["Attributes"])
 # This file defines API routes for managing attributes such as amenities. 
 # It includes a route for creating a new amenity, which accepts data including the name, an optional icon (which can be a data URL), and status. 
 # The route interacts with the AttributeService to handle business logic and uses StorageService for handling file uploads if an icon is provided as a data URL. 

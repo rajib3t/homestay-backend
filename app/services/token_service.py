@@ -2,15 +2,15 @@ from app.services.base_service import BaseService
 from app.models.token_model import Token, TokenType
 from app.core.security import JWTHandler
 from datetime import datetime, timezone
-from app.repositories.token_repository import TokenRepository
+
 
 class TokenService(BaseService):
-    def __init__(self, repository: TokenRepository):
-        super().__init__(repository.db)
-        self.repository = repository
+    def __init__(self, session_repository, db=None):
+        super().__init__(db)
+        self.session_repository = session_repository
 
     async def create_token(self, identity: str, additional_claims: dict = None, expires_at=None, absolute_expiry=None):
-        """Creates a refresh token and saves it to the database.
+        """Creates a refresh token and saves it to the session store.
 
         If `expires_at` is provided, it's used for the JWT `exp` claim and
         returned expiry. `absolute_expiry` is stored on the token for absolute session expiry checks.
@@ -30,7 +30,7 @@ class TokenService(BaseService):
             additional_claims=additional_claims
         )
 
-        await self.repository.insert(token_obj.to_mongo_dict())
+        await self.session_repository.insert(token_obj.to_mongo_dict())
         return token_obj
 
     async def verify_token(self, token_string: str):
@@ -41,8 +41,8 @@ class TokenService(BaseService):
             if payload.get("type") != "refresh":
                 return False, None, "Invalid token type"
             
-            # Check database for revocation
-            doc = await self.repository.find_by_token(token_string)
+            # Check session store for revocation
+            doc = await self.session_repository.find_by_token(token_string)
             if not doc:
                 return False, None, "Token not found"
             
@@ -59,4 +59,4 @@ class TokenService(BaseService):
 
     async def revoke_token(self, token_string: str):
         """Revokes a refresh token."""
-        await self.repository.revoke(token_string)
+        await self.session_repository.revoke(token_string)

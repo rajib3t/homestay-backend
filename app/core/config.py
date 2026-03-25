@@ -6,6 +6,12 @@ from typing import Optional
 class Settings(BaseSettings):
     APP_NAME: str = "FastAPI OOP App"
     MONGO_URI: str
+    REDIS_URL: Optional[str] = None
+    REDIS_HOST: Optional[str] = None
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: Optional[str] = None
+    REDIS_DB: int = 0
+    REDIS_TOKEN_PREFIX: str = "refresh_token"
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 2

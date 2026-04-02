@@ -25,6 +25,25 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
     SECURE_COOKIES: bool = False
+
+    # Email Settings (Multiple Providers Supported)
+    EMAIL_PROVIDER: str = "mock" # options: "mock", "smtp", "mailgun", "brevo"
+    EMAILS_FROM_EMAIL: Optional[str] = None
+    EMAILS_FROM_NAME: Optional[str] = None
+    
+    # SMTP
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    
+    # Mailgun
+    MAILGUN_DOMAIN: Optional[str] = None
+    MAILGUN_API_KEY: Optional[str] = None
+    
+    # Brevo
+    BREVO_API_KEY: Optional[str] = None
+
     # S3 / MinIO settings
     S3_PROVIDER: Optional[str] = None  # 'aws' or 'minio' (optional)
     S3_ENDPOINT_URL: Optional[str] = None

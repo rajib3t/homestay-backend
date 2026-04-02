@@ -67,3 +67,40 @@ def get_storage_service():
 
 def get_attribute_service(db=Depends(get_database)):
     return AttributeService(AttributeRepository(db))
+
+
+def get_email_service():
+    from app.services.email_service import (
+        MockEmailService, SMTPEmailService, 
+        MailgunEmailService, BrevoEmailService, BaseEmailService
+    )
+
+    provider = (settings.EMAIL_PROVIDER or "mock").lower()
+    
+    if provider == "smtp" and settings.SMTP_HOST:
+        return SMTPEmailService(
+            host=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USER,
+            password=settings.SMTP_PASSWORD,
+            from_email=settings.EMAILS_FROM_EMAIL,
+            from_name=settings.EMAILS_FROM_NAME
+        )
+    elif provider == "mailgun" and settings.MAILGUN_DOMAIN and settings.MAILGUN_API_KEY:
+        return MailgunEmailService(
+            domain=settings.MAILGUN_DOMAIN,
+            api_key=settings.MAILGUN_API_KEY,
+            from_email=settings.EMAILS_FROM_EMAIL,
+            from_name=settings.EMAILS_FROM_NAME
+        )
+    elif provider == "brevo" and settings.BREVO_API_KEY:
+        return BrevoEmailService(
+            api_key=settings.BREVO_API_KEY,
+            from_email=settings.EMAILS_FROM_EMAIL,
+            from_name=settings.EMAILS_FROM_NAME
+        )
+    else:
+        return MockEmailService(
+            from_email=settings.EMAILS_FROM_EMAIL,
+            from_name=settings.EMAILS_FROM_NAME
+        )

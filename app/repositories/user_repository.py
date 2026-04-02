@@ -31,3 +31,15 @@ class UserRepository(BaseRepository):
     
     async def get_vendor_users(self, ):
         return await self.collection.find({"role": "vendor"}).to_list(length=None)
+    
+    async def find_user_conflict(self, username: str, email: str, mobile: str, exclude_id=None):
+        query = {"$or": [{"name": username}, {"email": email}, {"mobile": mobile}]}
+        if exclude_id is not None:
+            query["_id"] = {"$ne": self.to_object_id(exclude_id)}
+        return await self.collection.find_one(query, {"name": 1, "email": 1, "mobile": 1})
+    
+    def find_many(self, query: dict):
+        return  self.collection.find(query).to_list(length=None)
+    
+    async def count_documents(self, query: dict):
+        return await self.collection.count_documents(query)

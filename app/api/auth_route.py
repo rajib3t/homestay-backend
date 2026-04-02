@@ -8,8 +8,9 @@ from app.deps import get_user_service, get_token_service
 from app.core.security import JWTHandler
 from typing import Optional
 from app.core.config import settings
+from app.middleware.idempotency_route import IdempotencyRoute
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Authentication"], route_class=IdempotencyRoute)
 
 
 # SESSION CONFIG
@@ -56,6 +57,8 @@ async def register(
         "first_name": user["first_name"],
         "last_name": user["last_name"],
         "mobile": user["mobile"],
+        "created_at": user["created_at"],
+        "updated_at": user["updated_at"],
     }
 
     cookie_secure = settings.SECURE_COOKIES
@@ -126,6 +129,8 @@ async def login(
         "first_name": user["first_name"],
         "last_name": user["last_name"],
         "mobile": user["mobile"],
+        "created_at": user["created_at"],
+        "updated_at": user["updated_at"],
     }
 
     cookie_secure = settings.SECURE_COOKIES

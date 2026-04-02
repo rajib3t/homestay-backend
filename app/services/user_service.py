@@ -1,9 +1,10 @@
 from datetime import datetime
+from re import search
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from app.core.security import PasswordHasher
 from app.repositories.user_repository import UserRepository
-
+from pymongo.errors import DuplicateKeyError
 class UserService(BaseService):
     def __init__(self, repository: UserRepository):
         super().__init__(repository.db)
@@ -24,15 +25,67 @@ class UserService(BaseService):
         return user
 
     async def create_user(self, user_data: dict):
-        existing = await self.repository.find_by_email(user_data["email"])
-        if existing:
-            raise AppException(400, "Email already exists")
+        existing = await self.repository.find_user_conflict(user_data["username"], user_data["email"], user_data["mobile"])
 
-        # Hash the password
-        user_data["password"] = PasswordHasher.hash_password(user_data["password"])
-        self.timestamps(user_data, is_new=True)
-        result = await self.repository.insert(user_data)
-        return str(result.inserted_id)
+        if existing:
+            if existing.get("username") == user_data["username"]:
+                raise AppException(
+                    status_code=409,
+                    message="User with this username already exists",
+                    error_code="USERNAME_EXISTS",
+                    field="username"
+                )
+            if existing.get("email") == user_data["email"]:
+                raise AppException(
+                    status_code=409,
+                    message="User with this email already exists",
+                    error_code="EMAIL_EXISTS",
+                    field="email"
+                )
+            if existing.get("mobile") == user_data["mobile"]:
+                raise AppException(
+                    status_code=409,
+                    message="User with this mobile number already exists",
+                    error_code="MOBILE_EXISTS",
+                    field="mobile"
+                )
+        
+        try:
+            # Hash the password
+            user_data["password"] = PasswordHasher.hash_password(user_data["password"])
+            self.timestamps(user_data, is_new=True)
+            result = await self.repository.insert(user_data)
+            return str(result.inserted_id)
+        except DuplicateKeyError as e:
+            # This is a fallback in case of a race condition where two requests try to create a user with the same email/username/mobile at the same time.
+            # The unique index in MongoDB will prevent the duplicate and raise this error.
+            error_msg = str(e)
+
+            if "username" in error_msg:
+                raise AppException(
+                    status_code=409,
+                    message="User with this username already exists",
+                    error_code="USERNAME_EXISTS",
+                    field="username"
+                )
+
+            if "email" in error_msg:
+                raise AppException(
+                    status_code=409,
+                    message="User with this email already exists",
+                    error_code="EMAIL_EXISTS",
+                    field="email"
+                )
+
+            if "mobile" in error_msg:
+                raise AppException(
+                    status_code=409,
+                    message="User with this mobile number already exists",
+                    error_code="MOBILE_EXISTS",
+                    field="mobile"
+                )
+
+            raise
 
     async def get_user(self, user_id: str):
         user = await self.repository.find_by_id(user_id)
@@ -67,3 +120,64 @@ class UserService(BaseService):
             return None
         
         return self._serialize_user(user)
+    
+    async def get_users(
+        self,
+        page: int = 1,
+        size: int = 10,
+        sort_by: str = "first_name",
+        sort_order: str = "asc",
+        search: dict = None,
+    ):
+
+        try:
+            page = int(page)
+            size = int(size)
+        except Exception:
+            raise AppException(
+                status_code=400,
+                message="Invalid pagination parameters",
+                error_code="INVALID_PAGINATION_PARAMETERS",
+                field="pagination"
+            )
+        if page < 1 or size < 1:
+            raise AppException(
+                status_code=400,
+                message="page and size must be positive integers",
+                error_code="INVALID_PAGINATION_VALUES",
+                field="pagination"
+            )
+
+        skip = (page - 1) * size
+        sort_direction = 1 if sort_order.lower() == "asc" else -1
+
+        query = {}
+
+        if search:
+            for k, v in search.items():
+
+                if isinstance(v, dict):
+                    query[k] = v
+
+                elif isinstance(v, str):
+                    lv = v.strip().lower()
+
+                    if lv in ("true", "false"):
+                        query[k] = lv == "true"
+                    else:
+                        query[k] = {"$regex": v, "$options": "i"}
+
+                else:
+                    query[k] = v
+
+        users_cursor = self.repository.collection.find(query).sort(sort_by, sort_direction).skip(skip).limit(size)
+        total = await self.repository.count_documents(query)
+        items = []
+        async for doc in users_cursor:
+            items.append(self._serialize_user(doc))
+        return {
+           "total": total,
+            "page": page,
+            "size": size,
+            "items": items
+        }

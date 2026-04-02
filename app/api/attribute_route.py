@@ -1,503 +1,314 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.middleware.idempotency_route import IdempotencyRoute
 from app.deps import get_attribute_service, get_storage_service
-from app.models.attribute_model import CreateAmenity, CreateFacility, CreateRoomType, ListAmenities, ListFacilities, ListRoomTypes, UpdateAmenity, UpdateAmenityStatus, UpdateFacility, UpdateFacilityStatus, UpdateRoomType, UpdateRoomTypeStatus
-from app.schemas.attribute_schema import AmenitiesResponse, AmenityResponse, FacilityResponse, FacilitiesResponse, RoomTypeResponse, RoomTypesResponse
 from app.services.attribute_service import AttributeService
 from app.services.storage_service import StorageService
-from app.utils.api_utils import (
-    handle_exception,
-    build_search,
-    replace_data_url_asset,
-    upload_data_url_asset,
-)
+from app.models.attribute_model import *
+from app.schemas.attribute_schema import *
+from app.utils.api_utils import upload_data_url_asset, replace_data_url_asset
+from app.utils.exception_decorate import handle_api_exceptions
 
-router = APIRouter(prefix="/attributes", tags=["Attributes"])
-# This file defines API routes for managing attributes such as amenities. 
-# It includes a route for creating a new amenity, which accepts data including the name, an optional icon (which can be a data URL), and status. 
-# The route interacts with the AttributeService to handle business logic and uses StorageService for handling file uploads if an icon is provided as a data URL. 
-# The response includes the created amenity details or appropriate error messages in case of failure.
-@router.post(
-    "/amenity",
-    response_model=AmenityResponse,
-    status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=False,
-)
-async def create_amenity(
-    amenity_data: CreateAmenity,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage_service: StorageService = Depends(get_storage_service)
-) -> AmenityResponse:
-    try:
-        new_amenity = {
-            "name": amenity_data.name,
-            "icon": None,
-            "status": amenity_data.status
-        }
+from .base_controller import BaseController
 
-        icon_value = amenity_data.icon
+_PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
 
-        if icon_value and icon_value.startswith("data:"):
-            new_amenity["icon"] = await upload_data_url_asset(
-                storage_service,
-                icon_value,
-                "amenities",
-                amenity_data.name,
-            )
-        else:
-            new_amenity["icon"] = icon_value
 
-        amenity_id = await attribute_service.create_amenity(new_amenity, storage_service)
+class AttributeController(BaseController):
 
-        amenity = await attribute_service.get_amenity(amenity_id)
+    def __init__(self):
+        super().__init__(service=None, storage_service=None)
 
-        return {
-            "status": "success",
-            "message": "Amenity created successfully",
-            "data": amenity
-        }
-
-    except Exception as e:
-        handle_exception(e)
-    
-
-@router.get(
-    "/amenities",
-    response_model=AmenitiesResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def list_amenities(
-    params: ListAmenities = Depends(),
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage_service: StorageService = Depends(get_storage_service)
-) -> AmenitiesResponse:
-    
-        try:
-            search = build_search(
-            name=params.name,
-            status=params.status,
-            
+        self.router = APIRouter(
+            prefix="/attributes",
+            tags=["Attributes"],
+            route_class=IdempotencyRoute,
         )
-            
-            
-            result = await attribute_service.list_amenities(
-                page=params.page,
-                size=params.size,
-                sort_by=params.sort_by,
-                sort_order=params.sort_order,
-                search=search,
-                storage=storage_service
+
+        self.register_routes()
+
+    # ---------------- ROUTE REGISTRATION ---------------- #
+
+    def register_routes(self):
+        routes = [
+            # Amenity
+            ("post",  "/amenity",              self.create_amenity,        {"response_model": AmenityResponse,    "response_model_by_alias": False, "status_code": 201}),
+            ("get",   "/amenities",            self.list_amenities,        {"response_model": AmenitiesResponse,  "response_model_by_alias": False}),
+            ("get",   "/amenity/{amenity_id}", self.get_amenity,           {"response_model": AmenityResponse,    "response_model_by_alias": False}),
+            ("patch", "/amenity/{amenity_id}", self.update_amenity,        {"response_model": AmenityResponse,    "response_model_by_alias": False}),
+            ("patch", "/amenity/{amenity_id}/status", self.update_amenity_status, {"response_model": AmenityResponse, "response_model_by_alias": False}),
+
+            # Facility
+            ("post",  "/facility",                  self.create_facility,        {"response_model": FacilityResponse,   "response_model_by_alias": False, "status_code": 201}),
+            ("get",   "/facilities",                self.list_facilities,        {"response_model": FacilitiesResponse, "response_model_by_alias": False}),
+            ("get",   "/facility/{facility_id}",    self.get_facility,           {"response_model": FacilityResponse,   "response_model_by_alias": False}),
+            ("patch", "/facility/{facility_id}",    self.update_facility,        {"response_model": FacilityResponse,   "response_model_by_alias": False}),
+            ("patch", "/facility/{facility_id}/status", self.update_facility_status, {"response_model": FacilityResponse, "response_model_by_alias": False}),
+
+            # Room type
+            ("post",  "/room-type",                    self.create_room_type,        {"response_model": RoomTypeResponse,  "response_model_by_alias": False, "status_code": 201}),
+            ("get",   "/room-types",                   self.list_room_types,         {"response_model": RoomTypesResponse, "response_model_by_alias": False}),
+            ("get",   "/room-type/{room_type_id}",     self.get_room_type,           {"response_model": RoomTypeResponse,  "response_model_by_alias": False}),
+            ("patch", "/room-type/{room_type_id}",     self.update_room_type,        {"response_model": RoomTypeResponse,  "response_model_by_alias": False}),
+            ("patch", "/room-type/{room_type_id}/status", self.update_room_type_status, {"response_model": RoomTypeResponse, "response_model_by_alias": False}),
+        ]
+
+        for method, path, handler, route_kwargs in routes:
+            getattr(self.router, method)(path, **route_kwargs)(handler)
+
+    # ---------------- AMENITY ---------------- #
+
+    @handle_api_exceptions
+    async def create_amenity(
+        self,
+        data: CreateAmenity,
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        payload = data.model_dump()
+        icon = payload.get("icon")
+
+        if icon and icon.startswith("data:"):
+            payload["icon"] = await upload_data_url_asset(
+                storage_service, icon, "amenities", payload["name"]
             )
-            return {
-                "status": "success",
-                "message": "Amenities retrieved successfully",
-                "meta": {
-                    "total": result["total"],
-                    "page": result["page"],
-                    "size": result["size"],
-                },
-                "data": result["items"],
-            }
-        except Exception as e:
-            handle_exception(e)
-        
-@router.get(
-    "/amenity/{amenity_id}",
-    response_model=AmenityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_amenity(
-    amenity_id: str,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-) -> AmenityResponse:
-    try:
-        amenity = await attribute_service.get_amenity(amenity_id)
-        if not amenity:
+
+        item_id = await service.create_amenity(payload, storage_service)
+        item = await service.get_amenity(item_id, storage_service)
+
+        return self.build_response("Amenity created", item)
+
+    @handle_api_exceptions
+    async def list_amenities(
+        self,
+        params: ListAmenities = Depends(),
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        search = self.build_search(name=params.name, status=params.status)
+        result = await service.list_amenities(
+            page=params.page,
+            size=params.size,
+            sort_by=params.sort_by,
+            sort_order=params.sort_order,
+            search=search,
+            storage=storage_service,
+        )
+        return self.build_response("Amenities list", data=result["items"], meta=_PAGINATION_META(result))
+
+    @handle_api_exceptions
+    async def get_amenity(
+        self,
+        amenity_id: str,
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        item = await service.get_amenity(amenity_id, storage_service)
+        if not item:
             raise HTTPException(status_code=404, detail="Amenity not found")
-        return {
-            "status": "success",
-            "message": "Amenity retrieved successfully",
-            "data": amenity
-        }
-    except Exception as e:
-        handle_exception(e)
+        return self.build_response("Amenity fetched", item)
 
-@router.patch(
-    "/amenity/{amenity_id}",
-    response_model=AmenityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def update_amenity(
-    amenity_id: str,
-    amenity_data: UpdateAmenity,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage_service: StorageService = Depends(get_storage_service)
-):
-    try:
-        update_data = amenity_data.model_dump(exclude_none=True)
+    @handle_api_exceptions
+    async def update_amenity(
+        self,
+        amenity_id: str,
+        data: UpdateAmenity,
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        update_data = data.model_dump(exclude_none=True)
+        icon = update_data.get("icon")
 
-        icon_value = update_data.get("icon")
-
-        if isinstance(icon_value, str) and icon_value.startswith("data:"):
-            existing = await attribute_service.get_amenity(amenity_id)
-            name_for_key = update_data.get("name") or existing.get("name") or "amenity"
+        if isinstance(icon, str) and icon.startswith("data:"):
+            existing = await service.get_amenity(amenity_id, storage_service)
+            if not existing:
+                raise HTTPException(status_code=404, detail="Amenity not found")
             update_data["icon"] = await replace_data_url_asset(
                 storage_service,
-                icon_value,
+                icon,
                 "amenities",
-                name_for_key,
+                update_data.get("name") or existing.get("name"),
                 existing.get("icon"),
             )
 
-        updated_amenity = await attribute_service.update_amenity(
-            amenity_id,
-            update_data,
-            storage_service
+        updated = await service.update_amenity(amenity_id, update_data, storage_service)
+        return self.build_response("Amenity updated", updated)
+
+    @handle_api_exceptions
+    async def update_amenity_status(
+        self,
+        amenity_id: str,
+        status_data: UpdateAmenityStatus,
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        updated = await service.update_amenity(amenity_id, {"status": status_data.status}, storage=None)
+        return self.build_response("Amenity status updated", updated)
+
+    # ---------------- FACILITY ---------------- #
+
+    @handle_api_exceptions
+    async def create_facility(
+        self,
+        data: CreateFacility,
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        payload = data.model_dump()
+        item_id = await service.create_facility(payload, storage_service)
+        item = await service.get_facility(item_id, storage_service)
+        return self.build_response("Facility created", item)
+
+    @handle_api_exceptions
+    async def list_facilities(
+        self,
+        params: ListFacilities = Depends(),
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        search = self.build_search(name=params.name, status=params.status)
+        result = await service.list_facilities(
+            page=params.page,
+            size=params.size,
+            sort_by=params.sort_by,
+            sort_order=params.sort_order,
+            search=search,
+            storage=storage_service,
         )
+        return self.build_response("Facilities list", data=result["items"], meta=_PAGINATION_META(result))
 
-        return {
-            "status": "success",
-            "message": "Amenity updated successfully",
-            "data": updated_amenity
-        }
+    @handle_api_exceptions
+    async def get_facility(
+        self,
+        facility_id: str,
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        item = await service.get_facility(facility_id, storage_service)
+        if not item:
+            raise HTTPException(status_code=404, detail="Facility not found")
+        return self.build_response("Facility fetched", item)
 
-    except Exception as e:
-        handle_exception(e)
+    @handle_api_exceptions
+    async def update_facility(
+        self,
+        facility_id: str,
+        data: UpdateFacility,
+        service: AttributeService = Depends(get_attribute_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        update_data = data.model_dump(exclude_none=True)
+        updated = await service.update_facility(facility_id, update_data, storage_service)
+        return self.build_response("Facility updated", updated)
 
-@router.patch(
-    "/amenity/{amenity_id}/status",
-    response_model=AmenityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
+    @handle_api_exceptions
+    async def update_facility_status(
+        self,
+        facility_id: str,
+        status_data: UpdateFacilityStatus,
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        updated = await service.update_facility(facility_id, {"status": status_data.status}, storage=None)
+        return self.build_response("Facility status updated", updated)
+
+    # ---------------- ROOM TYPE ---------------- #
+
+    @handle_api_exceptions
+    async def create_room_type(
+        self,
+        data: CreateRoomType,
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        payload = data.model_dump()
+        item_id = await service.create_room_type(payload)
+        item = await service.get_room_type(item_id)
+        return self.build_response("Room type created", item)
+
+    @handle_api_exceptions
+    async def list_room_types(
+        self,
+        params: ListRoomTypes = Depends(),
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        search = self.build_search(name=params.name, status=params.status)
+        result = await service.list_room_types(
+            page=params.page,
+            size=params.size,
+            sort_by=params.sort_by,
+            sort_order=params.sort_order,
+            search=search,
+        )
+        return self.build_response("Room types list", data=result["items"], meta=_PAGINATION_META(result))
+
+    @handle_api_exceptions
+    async def get_room_type(
+        self,
+        room_type_id: str,
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        item = await service.get_room_type(room_type_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Room type not found")
+        return self.build_response("Room type fetched", item)
+
+    @handle_api_exceptions
+    async def update_room_type(
+        self,
+        room_type_id: str,
+        data: UpdateRoomType,
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        update_data = data.model_dump(exclude_none=True)
+        updated = await service.update_room_type(room_type_id, update_data)
+        return self.build_response("Room type updated", updated)
+
+    @handle_api_exceptions
+    async def update_room_type_status(
+        self,
+        room_type_id: str,
+        status_data: UpdateRoomTypeStatus,
+        service: AttributeService = Depends(get_attribute_service),
+    ):
+        updated = await service.update_room_type(room_type_id, {"status": status_data.status})
+        return self.build_response("Room type status updated", updated)
+
+
+controller = AttributeController()
+router = controller.router
+
+
+@handle_api_exceptions
 async def update_amenity_status(
     amenity_id: str,
     status_data: UpdateAmenityStatus,
     attribute_service: AttributeService = Depends(get_attribute_service),
-) -> AmenityResponse:
-    try:
-        updated_amenity = await attribute_service.update_amenity(
-            amenity_id,
-            {"status": status_data.status},
-            storage=None,
-        )
-
-        return {
-            "status": "success",
-            "message": "Amenity status updated successfully",
-            "data": updated_amenity,
-        }
-    except Exception as e:
-        handle_exception(e)
-
-@router.post(
-    "/facility",
-    response_model=FacilityResponse,
-    status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=False,
-)
-async def create_facility(
-    facility_data: CreateFacility,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage: StorageService = Depends(get_storage_service),
-) -> FacilityResponse:
-    try:
-        new_facility = {
-            "name": facility_data.name,
-            "icon": facility_data.icon,
-            "status": facility_data.status
-        }
-
-        facility_id = await attribute_service.create_facility(new_facility, storage)
-
-        facility = await attribute_service.get_facility(facility_id)
-
-        return {
-            "status": "success",
-            "message": "Facility created successfully",
-            "data": facility
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-    
-@router.get(
-    "/facility/{facility_id}",
-    response_model=FacilityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_facility(
-    facility_id: str,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage: StorageService = Depends(get_storage_service)
-) -> FacilityResponse:
-    try:
-        facility = await attribute_service.get_facility(facility_id, storage)
-        if not facility:
-            raise HTTPException(status_code=404, detail="Facility not found")
-        return {
-            "status": "success",
-            "message": "Facility retrieved successfully",
-            "data": facility
-        }
-    except Exception as e:
-        handle_exception(e)
-@router.get(
-    "/facilities",
-    response_model=FacilitiesResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def list_facilities(
-    params: ListFacilities = Depends(),
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage_service: StorageService = Depends(get_storage_service)
 ):
-        try:
-            search = build_search(
-            name=params.name,
-            status=params.status,
-            
-        )
-            
-            
-            result = await attribute_service.list_facilities(
-                page=params.page,
-                size=params.size,
-                sort_by=params.sort_by,
-                sort_order=params.sort_order,
-                search=search,
-                storage=storage_service
-            )
-            return {
-                "status": "success",
-                "message": "Facilities retrieved successfully",
-                "meta": {
-                    "total": result["total"],
-                    "page": result["page"],
-                    "size": result["size"],
-                },
-                "data": result["items"],
-            }
-        except Exception as e:
-            handle_exception(e)
-    
+    return await controller.update_amenity_status(
+        amenity_id=amenity_id,
+        status_data=status_data,
+        service=attribute_service,
+    )
 
-@router.patch(
-    "/facility/{facility_id}",
-    response_model=FacilityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def update_facility(
-    facility_id: str,
-    facility_data: UpdateFacility,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-    storage_service: StorageService = Depends(get_storage_service)
-):
-    try:
-        update_data = facility_data.model_dump(exclude_none=True)
 
-        icon_value = update_data.get("icon")
-
-        if isinstance(icon_value, str) and icon_value.startswith("data:"):
-            existing = await attribute_service.get_facility(facility_id)
-            name_for_key = update_data.get("name") or existing.get("name") or "facility"
-            update_data["icon"] = await replace_data_url_asset(
-                storage_service,
-                icon_value,
-                "facilities",
-                name_for_key,
-                existing.get("icon"),
-            )
-
-        updated_facility = await attribute_service.update_facility(
-            facility_id,
-            update_data,
-            storage_service
-        )
-
-        return {
-            "status": "success",
-            "message": "Facility updated successfully",
-            "data": updated_facility
-        }
-
-    except Exception as e:
-        handle_exception(e)
-    
-@router.patch(
-    "/facility/{facility_id}/status",
-    response_model=FacilityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
+@handle_api_exceptions
 async def update_facility_status(
     facility_id: str,
     status_data: UpdateFacilityStatus,
     attribute_service: AttributeService = Depends(get_attribute_service),
-) -> FacilityResponse:
-    try:
-        updated_facility = await attribute_service.update_facility(
-            facility_id,
-            {"status": status_data.status},
-            storage=None,
-        )
-
-        return {
-            "status": "success",
-            "message": "Facility status updated successfully",
-            "data": updated_facility,
-        }
-    except Exception as e:
-        handle_exception(e)
-    
-
-@router.post(
-    "/room-type",
-    response_model=RoomTypeResponse,
-    status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=False,
-)
-async def create_room_type(
-    room_type_data: CreateRoomType,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-) -> RoomTypeResponse:
-        try:
-            new_room_type = {
-                "name": room_type_data.name,
-                "capacity": room_type_data.capacity,
-                "status": room_type_data.status
-            }
-
-            room_type_id = await attribute_service.create_room_type(new_room_type)
-
-            room_type = await attribute_service.get_room_type(room_type_id)
-
-            return {
-                "status": "success",
-                "message": "Room type created successfully",
-                "data": room_type
-            }
-
-        except Exception as e:
-            handle_exception(e)
-
-
-@router.get(
-    "/room-type/{room_type_id}",
-    response_model=RoomTypeResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_room_type(
-    room_type_id: str,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-) -> RoomTypeResponse:
-    try:
-        room_type = await attribute_service.get_room_type(room_type_id)
-        if not room_type:
-            raise HTTPException(status_code=404, detail="Room type not found")
-        return {
-            "status": "success",
-            "message": "Room type retrieved successfully",
-            "data": room_type
-        }
-    except Exception as e:
-        handle_exception(e)
-
-
-@router.get(
-    "/room-types",
-    response_model=RoomTypesResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def list_room_types(
-    params: ListRoomTypes = Depends(),
-    attribute_service: AttributeService = Depends(get_attribute_service),
-) -> RoomTypesResponse:
-        try:
-            search = build_search(
-            name=params.name,
-            status=params.status,
-            
-        )
-            
-            
-            result = await attribute_service.list_room_types(
-                page=params.page,
-                size=params.size,
-                sort_by=params.sort_by,
-                sort_order=params.sort_order,
-                search=search,
-            )
-            return {
-                "status": "success",
-                "message": "Room types retrieved successfully",
-                "meta": {
-                    "total": result["total"],
-                    "page": result["page"],
-                    "size": result["size"],
-                },
-                "data": result["items"],
-            }
-        except Exception as e:
-            handle_exception(e)
-
-@router.patch(
-    "/room-type/{room_type_id}",
-    response_model=RoomTypeResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def update_room_type(
-    room_type_id: str,
-    room_type_data: UpdateRoomType,
-    attribute_service: AttributeService = Depends(get_attribute_service),
 ):
-    try:
-        update_data = room_type_data.model_dump(exclude_none=True)
+    return await controller.update_facility_status(
+        facility_id=facility_id,
+        status_data=status_data,
+        service=attribute_service,
+    )
 
-        updated_room_type = await attribute_service.update_room_type(
-            room_type_id,
-            update_data,
-        )
 
-        return {
-            "status": "success",
-            "message": "Room type updated successfully",
-            "data": updated_room_type
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-@router.patch(
-    "/room-type/{room_type_id}/status",
-    response_model=RoomTypeResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
+@handle_api_exceptions
 async def update_room_type_status(
     room_type_id: str,
     status_data: UpdateRoomTypeStatus,
     attribute_service: AttributeService = Depends(get_attribute_service),
-) -> RoomTypeResponse:
-    try:
-        updated_room_type = await attribute_service.update_room_type(
-            room_type_id,
-            {"status": status_data.status},
-        )
-
-        return {
-            "status": "success",
-            "message": "Room type status updated successfully",
-            "data": updated_room_type,
-        }
-    except Exception as e:
-        handle_exception(e)
+):
+    return await controller.update_room_type_status(
+        room_type_id=room_type_id,
+        status_data=status_data,
+        service=attribute_service,
+    )

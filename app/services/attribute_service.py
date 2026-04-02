@@ -77,7 +77,7 @@ class AttributeService(BaseService):
 
             )
     
-    async def get_amenity(self, amenity_id: str) -> Amenity:    
+    async def get_amenity(self, amenity_id: str, storage: Optional[StorageService] = None) -> Amenity:
         # validate ObjectId format first
         if not ObjectId.is_valid(amenity_id):
             raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
@@ -87,6 +87,11 @@ class AttributeService(BaseService):
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
         # convert ObjectId to string for API responses
         amenity["_id"] = str(amenity["_id"])
+        if storage and amenity.get("icon"):
+            try:
+                amenity["icon"] = storage.generate_presigned_url(amenity["icon"])
+            except Exception:
+                pass
         return amenity
 
     async def list_amenities(
@@ -173,12 +178,7 @@ class AttributeService(BaseService):
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
 
-        updated = await self.get_amenity(amenity_id)
-        if storage and updated.get("icon"):
-            try:
-                updated["icon"] = storage.generate_presigned_url(updated["icon"])
-            except Exception:
-                pass
+        updated = await self.get_amenity(amenity_id, storage)
         return updated
     
     async def toggle_amenity_status(self, amenity_id: str) -> Amenity:

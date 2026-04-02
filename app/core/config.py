@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = None
     REDIS_DB: int = 0
     REDIS_TOKEN_PREFIX: str = "refresh_token"
+    IDEMPOTENCY_PREFIX: str = "idempotency"
+    IDEMPOTENCY_TTL_SECONDS: int = 86400
+    IDEMPOTENCY_HEADER_NAME: str = "Idempotency-Key"
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 2

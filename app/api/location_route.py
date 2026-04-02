@@ -1,10 +1,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 
 from app.deps import get_location_service, get_storage_service
+from app.middleware.idempotency_route import IdempotencyRoute
 from app.services.location_service import LocationService
+from app.services.storage_service import StorageService
 
 from app.models.location_model import (
     CityCreate, CityList,
@@ -19,441 +21,281 @@ from app.schemas.location_schema import (
 )
 
 from app.utils.api_utils import (
-    handle_exception,
     parse_request_payload,
     parse_optional_request_payload,
     parse_image_input,
-    build_search
 )
+from app.utils.exception_decorate import handle_api_exceptions
 
-router = APIRouter(prefix="/locations", tags=["Locations"])
+from .base_controller import BaseController
 
 logger = logging.getLogger(__name__)
 
-
-def _attach_image_url(item: dict, storage) -> None:
-    """Attach a presigned `image_url` to `item` if it has an `image` key and storage is available."""
-    if not storage or not item or not isinstance(item, dict):
-        return
-    key = item.get("image")
-    if key:
-        try:
-            url = storage.generate_presigned_url(key)
-            item["image_url"] = url
-        except Exception:
-            # silently ignore presign failures
-            pass
-
-@router.post("/country", response_model=CountryResponse, status_code=201)
-async def create_country(
-    country_data: CountryCreate,
-    service: LocationService = Depends(get_location_service),
-):
-    try:
-        country_id = await service.create_country(country_data.model_dump())
-        country = await service.get_country(country_id)
-
-        return {
-            "status": "success",
-            "message": "Country created successfully",
-            "data": country
-        }
-
-    except Exception as e:
-        handle_exception(e)
+_PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
 
 
+class LocationController(BaseController):
 
-@router.get(
-    "/country/{country_id}",
-    response_model=CountryResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_country(
-    country_id: str,
-    service: LocationService = Depends(get_location_service),
-):
-    try:
-        country = await service.get_country(country_id)
+    def __init__(self):
+        super().__init__(service=None, storage_service=None)
 
-        if not country:
-            raise HTTPException(404, "Country not found")
-
-        return {
-            "status": "success",
-            "message": "Country retrieved successfully",
-            "data": country
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-@router.patch(
-    "/country/{country_id}",
-    response_model=CountryResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def update_country(
-    country_id: str,
-    country_data: CountryUpdate,
-    location_service: LocationService = Depends(get_location_service),
-):
-    try:
-        # Update country and return updated document
-        updated = await location_service.update_country(country_id, country_data.model_dump())
-        if not updated:
-            raise HTTPException(status_code=404, detail="Country not found")
-        country = await location_service.get_country(country_id)
-
-        return {
-            "status": "success",
-            "message": "Country updated successfully",
-            "data": country
-        }
-    except Exception as e:
-        handle_exception(e)
-
-@router.patch(
-    "/country/{country_id}/status",
-    response_model=CountryResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def toggle_country_status(
-    country_id: str,
-    location_service: LocationService = Depends(get_location_service),
-):
-    try:
-        # Toggle status and return updated document
-        updated = await location_service.toggle_country_status(country_id)
-        if not updated:
-            raise HTTPException(status_code=404, detail="Country not found")
-        country = await location_service.get_country(country_id)
-
-        return {
-            "status": "success",
-            "message": "Country status toggled successfully",
-            "data": country
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-@router.get("/countries", response_model=CountriesResponse,response_model_by_alias=False,)
-async def list_countries(
-    params: CountryList = Depends(),
-    service: LocationService = Depends(get_location_service),
-):
-    try:
-        search = build_search(
-            name=params.name,
-            code=params.code,
-            status=params.status
+        self.router = APIRouter(
+            prefix="/locations",
+            tags=["Locations"],
+            route_class=IdempotencyRoute,
         )
 
+        self.register_routes()
+
+    # ---------------- ROUTE REGISTRATION ---------------- #
+
+    def register_routes(self):
+        routes = [
+            # Country
+            ("post",  "/country",                       self.create_country,         {"response_model": CountryResponse,    "response_model_by_alias": False, "status_code": 201}),
+            ("get",   "/country/{country_id}",          self.get_country,            {"response_model": CountryResponse,    "response_model_by_alias": False}),
+            ("patch", "/country/{country_id}",          self.update_country,         {"response_model": CountryResponse,    "response_model_by_alias": False}),
+            ("patch", "/country/{country_id}/status",   self.toggle_country_status,  {"response_model": CountryResponse,    "response_model_by_alias": False}),
+            ("get",   "/countries",                     self.list_countries,         {"response_model": CountriesResponse,  "response_model_by_alias": False}),
+
+            # City
+            ("post",  "/city",                          self.create_city,            {"response_model": CityResponse,       "response_model_by_alias": False, "status_code": 201}),
+            ("get",   "/cities",                        self.list_cities,            {"response_model": CitiesResponse,     "response_model_by_alias": False}),
+            ("get",   "/city/{city_id}",                self.get_city,               {"response_model": CityResponse,       "response_model_by_alias": False}),
+            ("patch", "/city/{city_id}",                self.update_city,            {"response_model": CityResponse,       "response_model_by_alias": False}),
+            ("get",   "/country/{country_id}/cities",   self.list_country_cities,    {"response_model": CitiesOnlyResponse, "response_model_by_alias": False}),
+
+            # Location
+            ("post",  "/create",                        self.create_location,        {"response_model": LocationResponse,   "response_model_by_alias": False, "status_code": 201}),
+            ("get",   "/locations",                     self.list_locations,         {"response_model": LocationsResponse,  "response_model_by_alias": False}),
+            ("get",   "/location/{location_id}",        self.get_location,           {"response_model": LocationResponse,   "response_model_by_alias": False}),
+            ("patch", "/location/{location_id}",        self.update_location,        {"response_model": LocationResponse,   "response_model_by_alias": False}),
+        ]
+
+        for method, path, handler, route_kwargs in routes:
+            getattr(self.router, method)(path, **route_kwargs)(handler)
+
+    # ---------------- COUNTRY ---------------- #
+
+    @handle_api_exceptions
+    async def create_country(
+        self,
+        data: CountryCreate,
+        service: LocationService = Depends(get_location_service),
+    ):
+        country_id = await service.create_country(data.model_dump())
+        country = await service.get_country(country_id)
+        return self.build_response("Country created successfully", country)
+
+    @handle_api_exceptions
+    async def get_country(
+        self,
+        country_id: str,
+        service: LocationService = Depends(get_location_service),
+    ):
+        country = await service.get_country(country_id)
+        if not country:
+            raise HTTPException(status_code=404, detail="Country not found")
+        return self.build_response("Country retrieved successfully", country)
+
+    @handle_api_exceptions
+    async def update_country(
+        self,
+        country_id: str,
+        data: CountryUpdate,
+        service: LocationService = Depends(get_location_service),
+    ):
+        updated = await service.update_country(country_id, data.model_dump())
+        if not updated:
+            raise HTTPException(status_code=404, detail="Country not found")
+        country = await service.get_country(country_id)
+        return self.build_response("Country updated successfully", country)
+
+    @handle_api_exceptions
+    async def toggle_country_status(
+        self,
+        country_id: str,
+        service: LocationService = Depends(get_location_service),
+    ):
+        updated = await service.toggle_country_status(country_id)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Country not found")
+        country = await service.get_country(country_id)
+        return self.build_response("Country status toggled successfully", country)
+
+    @handle_api_exceptions
+    async def list_countries(
+        self,
+        params: CountryList = Depends(),
+        service: LocationService = Depends(get_location_service),
+    ):
+        search = self.build_search(name=params.name, code=params.code, status=params.status)
         result = await service.list_countries(
             page=params.page,
             size=params.size,
             sort_by=params.sort_by,
             sort_order=params.sort_order,
-            search=search
+            search=search,
         )
+        return self.build_response("Countries retrieved successfully", data=result["items"], meta=_PAGINATION_META(result))
 
-        return {
-            "status": "success",
-            "message": "Countries retrieved successfully",
-            "meta": {
-                "total": result["total"],
-                "page": result["page"],
-                "size": result["size"],
-            },
-            "data": result["items"]
-        }
+    # ---------------- CITY ---------------- #
 
-    except Exception as e:
-        handle_exception(e)
-
-
-# List all cities for a country
-@router.get(
-    "/country/{country_id}/cities",
-    response_model=CitiesOnlyResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def list_country_cities(
-    country_id: str,
-    location_service: LocationService = Depends(get_location_service),
-    storage: object = Depends(get_storage_service),
-):
-    try:
-        cities = await location_service.list_cities_by_country(country_id)
-    except Exception as e:
-        handle_exception(e)
-
-    # attach presigned urls for each city
-    try:
-        for c in cities:
-            _attach_image_url(c, storage)
-    except Exception as e:
-        handle_exception(e)
-
-    return {
-        "status": "success",
-        "message": "Cities retrieved successfully",
-        "data": cities,
-    }
-# City Endpoints
-@router.post("/city", response_model=CityResponse, status_code=201,  response_model_by_alias=False,)
-async def create_city(
-    request: Request,
-    city_data: Optional[str] = Form(None),
-    image_file: Optional[UploadFile] = File(None),
-    service: LocationService = Depends(get_location_service),
-    storage=Depends(get_storage_service),
-):
-    try:
+    @handle_api_exceptions
+    async def create_city(
+        self,
+        request: Request,
+        city_data: Optional[str] = Form(None),
+        image_file: Optional[UploadFile] = File(None),
+        service: LocationService = Depends(get_location_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
         payload = await parse_request_payload(request, city_data)
-
         image_field = payload.pop("image", None)
         image_bytes, content_type = await parse_image_input(image_file, image_field)
 
         city_model = CityCreate.model_validate(payload)
-
-        city = await service.create_city(
+        city_id = await service.create_city(
             city_model.model_dump(),
             image_bytes=image_bytes,
             content_type=content_type,
-            storage=storage
+            storage=storage_service,
         )
+        city = await service.get_city(city_id, storage=storage_service)
+        return self.build_response("City created successfully", city)
 
-        city = await service.get_city(city, storage=storage)
-
-        return {
-            "status": "success",
-            "message": "City created successfully",
-            "data": city
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-@router.get("/cities", response_model=CitiesResponse,response_model_by_alias=False,)
-async def list_cities(
-    params: CityList = Depends(),
-    service: LocationService = Depends(get_location_service),
-    storage=Depends(get_storage_service),
-):
-    try:
-        search = build_search(
-            name=params.name,
-            country=params.country,
-            is_popular=params.is_popular
-        )
-
+    @handle_api_exceptions
+    async def list_cities(
+        self,
+        params: CityList = Depends(),
+        service: LocationService = Depends(get_location_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        search = self.build_search(name=params.name, country=params.country, is_popular=params.is_popular)
         result = await service.list_cities(
             page=params.page,
             size=params.size,
             sort_by=params.sort_by,
             sort_order=params.sort_order,
             search=search,
-            storage=storage
+            storage=storage_service,
         )
+        return self.build_response("Cities retrieved successfully", data=result["items"], meta=_PAGINATION_META(result))
 
-        return {
-            "status": "success",
-            "message": "Cities retrieved successfully",
-            "meta": {
-                "total": result["total"],
-                "page": result["page"],
-                "size": result["size"],
-            },
-            "data": result["items"]
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-
-@router.get(
-    "/city/{city_id}",
-    response_model=CityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_city(
-    city_id: str,
-    location_service: LocationService = Depends(get_location_service),
-    storage: object = Depends(get_storage_service),
-):
-    try:
-        city = await location_service.get_city(city_id, storage=storage)
+    @handle_api_exceptions
+    async def get_city(
+        self,
+        city_id: str,
+        service: LocationService = Depends(get_location_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        city = await service.get_city(city_id, storage=storage_service)
         if not city:
             raise HTTPException(status_code=404, detail="City not found")
+        return self.build_response("City retrieved successfully", city)
 
-        return {
-            "status": "success",
-            "message": "City retrieved successfully",
-            "data": city
-        }
-    except Exception as e:
-        handle_exception(e)
-
-@router.patch(
-    "/city/{city_id}",
-    response_model=CityResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def update_city(
-    city_id: str,
-    request: Request,
-    city_data: Optional[str] = Form(None),
-    image_file: Optional[UploadFile] = File(None),
-    location_service: LocationService = Depends(get_location_service),
-    storage: object = Depends(get_storage_service),
-    
-):
-    try:
+    @handle_api_exceptions
+    async def update_city(
+        self,
+        city_id: str,
+        request: Request,
+        city_data: Optional[str] = Form(None),
+        image_file: Optional[UploadFile] = File(None),
+        service: LocationService = Depends(get_location_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
         payload = await parse_optional_request_payload(
             request,
             city_data,
             form_field_name="city_data",
             body_key="city_data",
         )
-
         image_field = payload.pop("image", None)
         image_bytes, content_type = await parse_image_input(image_file, image_field)
 
-        updated = await location_service.update_city(
+        updated = await service.update_city(
             city_id=city_id,
             update_data=payload,
             image_bytes=image_bytes,
             content_type=content_type,
-            storage=storage,
+            storage=storage_service,
         )
-
         if not updated:
             raise HTTPException(status_code=404, detail="City not found")
 
-        city = await location_service.get_city(city_id, storage=storage)
+        city = await service.get_city(city_id, storage=storage_service)
+        return self.build_response("City updated successfully", city)
 
-        return {
-            "status": "success",
-            "message": "City updated successfully",
-            "data": city,
-        }
+    @handle_api_exceptions
+    async def list_country_cities(
+        self,
+        country_id: str,
+        service: LocationService = Depends(get_location_service),
+        storage_service: StorageService = Depends(get_storage_service),
+    ):
+        cities = await service.list_cities_by_country(country_id)
+        for city in cities:
+            if storage_service and isinstance(city, dict):
+                key = city.get("image")
+                if key:
+                    try:
+                        city["image_url"] = storage_service.generate_presigned_url(key)
+                    except Exception:
+                        pass
+        return self.build_response("Cities retrieved successfully", cities)
 
-    except Exception as e:
-        handle_exception(e)
-    
+    # ---------------- LOCATION ---------------- #
 
+    @handle_api_exceptions
+    async def create_location(
+        self,
+        data: LocationCreate,
+        service: LocationService = Depends(get_location_service),
+    ):
+        location_id = await service.create_location(data.model_dump())
+        location = await service.get_location(location_id)
+        return self.build_response("Location created successfully", location)
 
-
-@router.post("/create", response_model=LocationResponse, status_code=201)
-async def create_location(
-    location_data: LocationCreate,
-    service: LocationService = Depends(get_location_service),
-):
-    try:
-        location = await service.create_location(location_data.model_dump())
-        db_location = await service.get_location(location)
-        return {
-            "status": "success",
-            "message": "Location created successfully",
-            "data": db_location
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-@router.get("/locations", response_model=LocationsResponse, response_model_by_alias=False, status_code=status.HTTP_200_OK)
-async def list_locations(
-    params: LocationList = Depends(),
-    service: LocationService = Depends(get_location_service),
-):
-    try:
-        search = build_search(
-            name=params.name,
-            city=params.city,
-            country=params.country
-        )
-
+    @handle_api_exceptions
+    async def list_locations(
+        self,
+        params: LocationList = Depends(),
+        service: LocationService = Depends(get_location_service),
+    ):
+        search = self.build_search(name=params.name, city=params.city, country=params.country)
         result = await service.list_locations(
             page=params.page,
             size=params.size,
             sort_by=params.sort_by,
             sort_order=params.sort_order,
-            search=search
+            search=search,
         )
+        return self.build_response("Locations retrieved successfully", data=result["items"], meta=_PAGINATION_META(result))
 
-        return {
-            "status": "success",
-            "message": "Locations retrieved successfully",
-            "meta": {
-                "total": result["total"],
-                "page": result["page"],
-                "size": result["size"],
-            },
-            "data": result["items"]
-        }
-
-    except Exception as e:
-        handle_exception(e)
-
-
-@router.get(
-    "/location/{location_id}",
-    response_model=LocationResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def get_location(
-    location_id: str,
-    location_service: LocationService = Depends(get_location_service),
-):
-    try:
-        location = await location_service.get_location(location_id)
+    @handle_api_exceptions
+    async def get_location(
+        self,
+        location_id: str,
+        service: LocationService = Depends(get_location_service),
+    ):
+        location = await service.get_location(location_id)
         if not location:
             raise HTTPException(status_code=404, detail="Location not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    return {
-        "status": "success",
-        "message": "Location retrieved successfully",
-        "data": location
-    }
+        return self.build_response("Location retrieved successfully", location)
 
-@router.patch(
-    "/location/{location_id}",
-    response_model=LocationResponse,
-    status_code=status.HTTP_200_OK,
-    response_model_by_alias=False,
-)
-async def update_location(
-    location_id: str,
-    location_data: LocationUpdate,
-    location_service: LocationService = Depends(get_location_service),
-):
-    try:
-        # Update location and return updated document
-        updated = await location_service.update_location(
-            location_id,
-            location_data.model_dump(exclude_none=True)
-        )
+    @handle_api_exceptions
+    async def update_location(
+        self,
+        location_id: str,
+        data: LocationUpdate,
+        service: LocationService = Depends(get_location_service),
+    ):
+        updated = await service.update_location(location_id, data.model_dump(exclude_none=True))
         if not updated:
             raise HTTPException(status_code=404, detail="Location not found")
-        location = await location_service.get_location(location_id)
+        location = await service.get_location(location_id)
+        return self.build_response("Location updated successfully", location)
 
-        return {
-            "status": "success",
-            "message": "Location updated successfully",
-            "data": location
-        }
 
-    except Exception as e:
-        handle_exception(e)
-
+controller = LocationController()
+router = controller.router

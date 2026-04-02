@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field
 from pydantic import ConfigDict
-from app.schemas.response import BaseResponse
+from app.schemas.response import BaseResponse, PaginationResponse
 
 class UserBase(BaseModel):
     username: str
@@ -19,6 +19,9 @@ class UserResponse(UserBase):
 
     model_config = ConfigDict(populate_by_name=True)
 
+
+class UsersResponse(PaginationResponse):
+    data: list[UserResponse] = Field(default_factory=list)
 class ProfileResponse(BaseResponse):
     data: UserResponse
 

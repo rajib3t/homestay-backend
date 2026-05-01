@@ -4,6 +4,7 @@ from enum import Enum
 import re
 from typing import ClassVar, List
 from app.models.request import ListRequest
+from app.models.company_model import CompanyUpdate
 
 
 # ---------------------------
@@ -80,6 +81,7 @@ class UserUpdate(BaseSchema):
     last_name: Optional[str] = Field(None, min_length=1, max_length=50)
     mobile: Optional[str] = None
     image: Optional[str] = None
+    company: Optional[CompanyUpdate] = None
 
     @field_validator("mobile")
     @classmethod

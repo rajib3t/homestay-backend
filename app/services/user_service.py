@@ -8,13 +8,17 @@ from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from app.core.security import PasswordHasher
 from app.repositories.user_repository import UserRepository
+from app.repositories.company_repository import CompanyRepository
+from app.repositories.address_repository import AddressRepository
 from pymongo.errors import DuplicateKeyError
 
 from app.services.storage_service import StorageService
 class UserService(BaseService):
-    def __init__(self, repository: UserRepository):
+    def __init__(self, repository: UserRepository, company_repository: CompanyRepository = None, address_repository: AddressRepository = None):
         super().__init__(repository.db)
         self.repository = repository
+        self.company_repository = company_repository
+        self.address_repository = address_repository
 
     @staticmethod
     def _serialize_user(user: dict):
@@ -93,15 +97,46 @@ class UserService(BaseService):
 
             raise
 
-    async def get_user(self, user_id: str, storage: Optional[StorageService] = None)-> UserData: 
+    async def get_user(self, user_id: str, storage: Optional[StorageService] = None, include_company: bool = True)-> UserData:
         user = await self.repository.find_by_id(user_id)
         if not user:
             raise AppException(404, "User not found")
-        
+
         if user.get("image") and storage:
             user["image"] =  storage.generate_presigned_url(user["image"])
-            
-        return self._serialize_user(user)
+
+        serialized = self._serialize_user(user)
+
+        # Include company data if requested and available
+        if include_company and self.company_repository:
+            company = await self.company_repository.find_by_user_id(user_id)
+            if company:
+                company = company.copy()
+                company["id"] = str(company.pop("_id"))
+
+                # Format timestamps
+                if company.get("created_at") and isinstance(company.get("created_at"), datetime):
+                    company["created_at"] = company["created_at"].isoformat()
+                if company.get("updated_at") and isinstance(company.get("updated_at"), datetime):
+                    company["updated_at"] = company["updated_at"].isoformat()
+
+                # Include address if available
+                if self.address_repository:
+                    address = await self.address_repository.find_by_company_id(company["id"])
+                    if address:
+                        address = address.copy()
+                        address["id"] = str(address.pop("_id"))
+                        if address.get("created_at") and isinstance(address.get("created_at"), datetime):
+                            address["created_at"] = address["created_at"].isoformat()
+                        if address.get("updated_at") and isinstance(address.get("updated_at"), datetime):
+                            address["updated_at"] = address["updated_at"].isoformat()
+                        address.pop("company_id", None)
+                        address.pop("user_id", None)
+                        company["address"] = address
+
+                serialized["company"] = company
+
+        return serialized
 
     async def update_user(self, user_id: str, update_data: dict, storage_service : StorageService = None):
         if not update_data:

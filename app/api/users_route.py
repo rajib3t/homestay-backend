@@ -7,10 +7,12 @@ from app.models.user_model import ListUsers, UserCreate, UserPasswordUpdate, Use
 from app.schemas.user_schema import ProfileResponse, UsersResponse, UserResponse
 from app.services.storage_service import StorageService
 from app.services.user_service import UserService
+from app.services.company_service import CompanyService
+from app.services.address_service import AddressService
 from app.services.email_service import BaseEmailService
 from app.utils.api_utils import parse_request_payload, replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
-from app.deps import get_storage_service, get_user_service, get_email_service
+from app.deps import get_storage_service, get_user_service, get_email_service, get_company_service, get_address_service
 
 _PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
 
@@ -89,7 +91,7 @@ class UserController(BaseController):
         service: UserService = Depends(get_user_service),
         storage_service: StorageService = Depends(get_storage_service)
     ):
-        user = await service.get_user(user_id, storage=storage_service)
+        user = await service.get_user(user_id, storage=storage_service, include_company=True)
         return self.build_response("User", user)
     
 
@@ -143,10 +145,42 @@ class UserController(BaseController):
         user_id: str,
         data: UserUpdate,
         service: UserService = Depends(get_user_service),
+        company_service: CompanyService = Depends(get_company_service),
+        address_service: AddressService = Depends(get_address_service),
         storage_service: StorageService = Depends(get_storage_service)
     ):
-        await service.update_user(user_id, data.model_dump(exclude_unset=True))
-        updated_user = await service.get_user(user_id, storage=storage_service)
+        payload = data.model_dump(exclude_unset=True)
+        company_data = payload.pop("company", None)
+        # Update user fields first
+        await service.update_user(user_id, payload)
+
+        # Handle nested company update if provided
+        if company_data:
+            address_data = company_data.pop("address", None)
+
+            # Check if user already has a company
+            try:
+                existing_company = await company_service.get_company_by_user_id(user_id)
+                company_id = existing_company["id"]
+                # Update existing company
+                await company_service.update_company(company_id, company_data)
+            except Exception:
+                # Company doesn't exist, create new one
+                company_data["user_id"] = user_id
+                company_id = await company_service.create_company(company_data)
+
+            # Handle address update if provided
+            if address_data and company_id:
+                existing_address = await address_service.get_address_by_company_id(company_id)
+
+                if existing_address:
+                    await address_service.update_address(existing_address["id"], address_data)
+                else:
+                    address_data["company_id"] = company_id
+                    await address_service.create_address(address_data)
+
+        updated_user = await service.get_user(user_id, storage=storage_service, include_company=True)
+        
         return self.build_response("User updated", updated_user)
 
 user_controller = UserController()

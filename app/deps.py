@@ -1,11 +1,15 @@
 from fastapi import Depends, Request
 from app.core.database import get_database
+from app.services.address_service import AddressService
 from app.services.attribute_service import AttributeService
+from app.services.company_service import CompanyService
 from app.services.user_service import UserService
 from app.services.token_service import TokenService
 from app.services.location_service import LocationService
 from app.services.storage_service import StorageService
+from app.repositories.address_repository import AddressRepository
 from app.repositories.attribute_repository import AttributeRepository
+from app.repositories.company_repository import CompanyRepository
 from app.repositories.location_repository import LocationRepository
 from app.repositories.redis_token_repository import RedisTokenRepository
 from app.repositories.token_repository import TokenRepository
@@ -17,7 +21,21 @@ from app.core.exceptions import AppException
 
 
 def get_user_service(db=Depends(get_database)):
-    return UserService(UserRepository(db))
+    return UserService(
+        UserRepository(db),
+        company_repository=CompanyRepository(db),
+        address_repository=AddressRepository(db)
+    )
+
+
+def get_company_service(db=Depends(get_database)):
+    company_repo = CompanyRepository(db)
+    address_repo = AddressRepository(db)
+    return CompanyService(company_repo, address_repo)
+
+
+def get_address_service(db=Depends(get_database)):
+    return AddressService(AddressRepository(db))
 
 
 def get_token_service(db=Depends(get_database)):

@@ -381,6 +381,8 @@ class LocationService(BaseService):
                 key=key, 
                 data=image_bytes, 
                 quality=90, 
+                lat=17.438001,
+                lon=78.395236,
                 
                 )
             # await storage.upload_bytes(key, image_bytes, content_type)

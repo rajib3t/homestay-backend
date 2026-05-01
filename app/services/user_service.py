@@ -1,10 +1,16 @@
 from datetime import datetime
 from re import search
+from typing import Optional
+
+from fastapi import logger
+from app.schemas.user_schema import UserData
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from app.core.security import PasswordHasher
 from app.repositories.user_repository import UserRepository
 from pymongo.errors import DuplicateKeyError
+
+from app.services.storage_service import StorageService
 class UserService(BaseService):
     def __init__(self, repository: UserRepository):
         super().__init__(repository.db)
@@ -87,13 +93,17 @@ class UserService(BaseService):
 
             raise
 
-    async def get_user(self, user_id: str):
+    async def get_user(self, user_id: str, storage: Optional[StorageService] = None)-> UserData: 
         user = await self.repository.find_by_id(user_id)
         if not user:
             raise AppException(404, "User not found")
+        
+        if user.get("image") and storage:
+            user["image"] =  storage.generate_presigned_url(user["image"])
+            
         return self._serialize_user(user)
 
-    async def update_user(self, user_id: str, update_data: dict):
+    async def update_user(self, user_id: str, update_data: dict, storage_service : StorageService = None):
         if not update_data:
             raise AppException(400, "No fields provided for update")
         
@@ -103,6 +113,12 @@ class UserService(BaseService):
             if existing:
                 raise AppException(400, "Email already exists")
 
+        if storage_service and "image" in update_data:
+            # If the image is being updated, we can handle the upload to storage here
+            image_url = await storage_service.upload_bytes(update_data["image"], f"profile_images/{user_id}.jpg")
+            update_data["image"] = image_url
+        if "password" in update_data:
+            update_data["password"] = PasswordHasher.hash_password(update_data["password"])
         self.timestamps(update_data)
         result = await self.repository.update_by_id(user_id, update_data)
         

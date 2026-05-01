@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 from pydantic import ConfigDict
 from app.schemas.response import BaseResponse, PaginationResponse
-
+from app.schemas.company_schema import CompanyResponse
 class UserBase(BaseModel):
     username: str
     email: EmailStr
@@ -11,24 +11,29 @@ class UserBase(BaseModel):
     first_name: str
     last_name: str
     mobile: str
+    image: Optional[str] = None
+    company: Optional[CompanyResponse] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
-class UserResponse(UserBase):
+class UserData(UserBase):
     id: str = Field(..., alias="_id")
 
     model_config = ConfigDict(populate_by_name=True)
 
+class UserResponse(BaseResponse):
+    data: UserData
 
 class UsersResponse(PaginationResponse):
-    data: list[UserResponse] = Field(default_factory=list)
+    data: list[UserData] = Field(default_factory=list)
+
 class ProfileResponse(BaseResponse):
-    data: UserResponse
+    data: UserData
 
 class AuthData(BaseModel):
     access_token: str
     refresh_token: str
-    user: UserResponse
+    user: UserData
 
 class RegistrationResponse(BaseResponse):
     data: AuthData
@@ -36,7 +41,7 @@ class RegistrationResponse(BaseResponse):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user: UserResponse
+    user: UserData
 
 class LoginResponse(BaseResponse):
     data: AuthData

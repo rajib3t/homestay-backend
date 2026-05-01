@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+
+
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.api.base_controller import BaseController
-from app.models.user_model import ListUsers, UserCreate
-from app.schemas.user_schema import ProfileResponse, UsersResponse
+from app.models.user_model import ListUsers, UserCreate, UserPasswordUpdate, UserProfileImageUpdate, UserUpdate
+from app.schemas.user_schema import ProfileResponse, UsersResponse, UserResponse
+from app.services.storage_service import StorageService
 from app.services.user_service import UserService
 from app.services.email_service import BaseEmailService
+from app.utils.api_utils import parse_request_payload, replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
-from app.deps import get_user_service, get_email_service
+from app.deps import get_storage_service, get_user_service, get_email_service
 
 _PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
 
@@ -26,6 +30,10 @@ class UserController(BaseController):
             # Routes will be added here in the future
             ("post",  "/", self.create_user, {"response_model": ProfileResponse, "response_model_by_alias": False, "status_code": 201}),
             ("get",   "/", self.list_users, {"response_model": UsersResponse, "response_model_by_alias": False}),
+            ("get",   "/{user_id}", self.get_user, {"response_model": UserResponse, "response_model_by_alias": False}),  
+            ("put",   "/{user_id}", self.update_user, {"response_model": UserResponse, "response_model_by_alias": False}),
+            ("put",   "/{user_id}/profile-image", self.update_profile_image, {"response_model": UserResponse, "response_model_by_alias": False}),
+            ("put",   "/{user_id}/password", self.update_user_password, {"response_model": UserResponse, "response_model_by_alias": False}),
 
         ]
 
@@ -73,6 +81,73 @@ class UserController(BaseController):
             
         )
         return self.build_response("Users list", data=result["items"], meta=_PAGINATION_META(result))
+
+    @handle_api_exceptions
+    async def get_user(
+        self,
+        user_id: str,
+        service: UserService = Depends(get_user_service),
+        storage_service: StorageService = Depends(get_storage_service)
+    ):
+        user = await service.get_user(user_id, storage=storage_service)
+        return self.build_response("User", user)
+    
+
+    @handle_api_exceptions
+    async def update_profile_image(
+        self,
+        user_id:str,
+        data: UserProfileImageUpdate,
+        service: UserService = Depends(get_user_service),
+        storage_service : StorageService = Depends(get_storage_service)
+    ) : 
+        
+        payload = data.model_dump()
+        image = payload.get("image")
+
+        if image is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
+        
+        if isinstance(image, str) and image.startswith("data:"):
+            existing_user = await service.get_user(user_id)
+            if existing_user is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            
+            old_image = existing_user.get("image") if existing_user.get("image") else None
+            payload['image'] = await replace_data_url_asset(
+                storage_service,
+                image,
+                "profile_images",
+                user_id,
+                old_key=old_image
+            )
+                
+        await service.update_user(user_id, {"image": payload['image']})
+        updated_user = await service.get_user(user_id, storage=storage_service)
+        return self.build_response("Profile image updated", updated_user)
+
+    @handle_api_exceptions
+    async def update_user_password(
+        self,
+        user_id: str,
+        data: UserPasswordUpdate,
+        service: UserService = Depends(get_user_service),
+    ):
+        await service.update_user(user_id, {"password": data.new_password})
+        user_data = await service.get_user(user_id)
+        return self.build_response("Password updated", user_data)
+       
+    @handle_api_exceptions
+    async def update_user(
+        self,
+        user_id: str,
+        data: UserUpdate,
+        service: UserService = Depends(get_user_service),
+        storage_service: StorageService = Depends(get_storage_service)
+    ):
+        await service.update_user(user_id, data.model_dump(exclude_unset=True))
+        updated_user = await service.get_user(user_id, storage=storage_service)
+        return self.build_response("User updated", updated_user)
 
 user_controller = UserController()
 router = user_controller.router

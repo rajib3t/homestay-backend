@@ -2,7 +2,6 @@ import pytest
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
-import asyncio
 
 from app.repositories.redis_token_repository import RedisTokenRepository
 from app.services.token_service import TokenService

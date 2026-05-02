@@ -1,16 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from app.middleware.idempotency_route import IdempotencyRoute
-from app.deps import get_attribute_service, get_storage_service
+from app.deps import get_attribute_service, get_storage_service, get_current_user
 from app.services.attribute_service import AttributeService
 from app.services.storage_service import StorageService
-from app.models.attribute_model import *
-from app.schemas.attribute_schema import *
+from app.models.attribute_model import (
+    CreateAmenity, UpdateAmenity, UpdateAmenityStatus,
+    CreateFacility, UpdateFacility, UpdateFacilityStatus,
+    CreateRoomType, UpdateRoomType, UpdateRoomTypeStatus,
+    ListAmenities, ListFacilities, ListRoomTypes
+)
+from app.schemas.attribute_schema import (
+    AmenityResponse, AmenitiesResponse,
+    FacilityResponse, FacilitiesResponse,
+    RoomTypeResponse, RoomTypesResponse
+)
 from app.utils.api_utils import upload_data_url_asset, replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
 
 from .base_controller import BaseController
 
-_PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
+def _pagination_meta(r):
+    return {"total": r["total"], "page": r["page"], "size": r["size"]}
 
 
 class AttributeController(BaseController):
@@ -61,6 +71,7 @@ class AttributeController(BaseController):
     async def create_amenity(
         self,
         data: CreateAmenity,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -81,6 +92,7 @@ class AttributeController(BaseController):
     async def list_amenities(
         self,
         params: ListAmenities = Depends(),
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -93,12 +105,13 @@ class AttributeController(BaseController):
             search=search,
             storage=storage_service,
         )
-        return self.build_response("Amenities list", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Amenities list", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_amenity(
         self,
         amenity_id: str,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -112,6 +125,7 @@ class AttributeController(BaseController):
         self,
         amenity_id: str,
         data: UpdateAmenity,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -138,6 +152,7 @@ class AttributeController(BaseController):
         self,
         amenity_id: str,
         status_data: UpdateAmenityStatus,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         updated = await service.update_amenity(amenity_id, {"status": status_data.status}, storage=None)
@@ -149,6 +164,7 @@ class AttributeController(BaseController):
     async def create_facility(
         self,
         data: CreateFacility,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -161,6 +177,7 @@ class AttributeController(BaseController):
     async def list_facilities(
         self,
         params: ListFacilities = Depends(),
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -173,12 +190,13 @@ class AttributeController(BaseController):
             search=search,
             storage=storage_service,
         )
-        return self.build_response("Facilities list", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Facilities list", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_facility(
         self,
         facility_id: str,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -192,6 +210,7 @@ class AttributeController(BaseController):
         self,
         facility_id: str,
         data: UpdateFacility,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -204,6 +223,7 @@ class AttributeController(BaseController):
         self,
         facility_id: str,
         status_data: UpdateFacilityStatus,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         updated = await service.update_facility(facility_id, {"status": status_data.status}, storage=None)
@@ -215,6 +235,7 @@ class AttributeController(BaseController):
     async def create_room_type(
         self,
         data: CreateRoomType,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         payload = data.model_dump()
@@ -226,6 +247,7 @@ class AttributeController(BaseController):
     async def list_room_types(
         self,
         params: ListRoomTypes = Depends(),
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         search = self.build_search(name=params.name, status=params.status)
@@ -236,12 +258,13 @@ class AttributeController(BaseController):
             sort_order=params.sort_order,
             search=search,
         )
-        return self.build_response("Room types list", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Room types list", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_room_type(
         self,
         room_type_id: str,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         item = await service.get_room_type(room_type_id)
@@ -254,6 +277,7 @@ class AttributeController(BaseController):
         self,
         room_type_id: str,
         data: UpdateRoomType,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         update_data = data.model_dump(exclude_none=True)
@@ -265,6 +289,7 @@ class AttributeController(BaseController):
         self,
         room_type_id: str,
         status_data: UpdateRoomTypeStatus,
+        current_user: str = Depends(get_current_user),
         service: AttributeService = Depends(get_attribute_service),
     ):
         updated = await service.update_room_type(room_type_id, {"status": status_data.status})

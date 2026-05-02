@@ -71,8 +71,8 @@ def get_current_user(request: Request) -> str:
         if payload.get("type") != "access":
             raise AppException(401, "Invalid token type")
         return payload.get("sub")
-    except Exception as e:
-        raise AppException(401, f"Invalid or expired token: {str(e)}")
+    except Exception:
+        raise AppException(401, "Invalid or expired token")
     
 
 
@@ -90,7 +90,7 @@ def get_attribute_service(db=Depends(get_database)):
 def get_email_service():
     from app.services.email_service import (
         MockEmailService, SMTPEmailService, 
-        MailgunEmailService, BrevoEmailService, BaseEmailService
+        MailgunEmailService, BrevoEmailService
     )
 
     provider = (settings.EMAIL_PROVIDER or "mock").lower()

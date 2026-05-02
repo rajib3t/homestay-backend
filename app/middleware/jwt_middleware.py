@@ -38,10 +38,10 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 payload = JWTHandler.decode_token(token)
                 request.state.user = payload.get("sub")
                 request.state.user_claims = payload
-            except Exception as exc:
+            except Exception:
                 return JSONResponse(
                     status_code=401,
-                    content={"status": "error", "message": f"Invalid or expired token: {str(exc)}"},
+                    content={"status": "error", "message": "Invalid or expired token"},
                 )
 
         return await call_next(request)

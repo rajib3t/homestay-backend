@@ -9,7 +9,6 @@ from app.core.logging_config import configure_logging
 from app.core.redis import connect_to_redis, close_redis_connection
 from app.core.exceptions import AppException
 from app.api.router import api_router
-from app.core.config import settings
 
 
 class Application:

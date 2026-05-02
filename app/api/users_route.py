@@ -1,6 +1,6 @@
 
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.api.base_controller import BaseController
 from app.models.user_model import ListUsers, UserCreate, UserPasswordUpdate, UserProfileImageUpdate, UserUpdate
@@ -10,11 +10,12 @@ from app.services.user_service import UserService
 from app.services.company_service import CompanyService
 from app.services.address_service import AddressService
 from app.services.email_service import BaseEmailService
-from app.utils.api_utils import parse_request_payload, replace_data_url_asset
+from app.utils.api_utils import replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
-from app.deps import get_storage_service, get_user_service, get_email_service, get_company_service, get_address_service
+from app.deps import get_storage_service, get_user_service, get_email_service, get_company_service, get_address_service, get_current_user
 
-_PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
+def _pagination_meta(r):
+    return {"total": r["total"], "page": r["page"], "size": r["size"]}
 
 class UserController(BaseController):
     def __init__(self):
@@ -47,6 +48,7 @@ class UserController(BaseController):
         self,
         data:UserCreate,
         background_tasks: BackgroundTasks,
+        current_user: str = Depends(get_current_user),
         user_service: UserService = Depends(get_user_service),
         email_service: BaseEmailService = Depends(get_email_service)
     ):
@@ -63,6 +65,7 @@ class UserController(BaseController):
     async def list_users(
         self,
         params:  ListUsers= Depends(),
+        current_user: str = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
         
     ):
@@ -82,12 +85,13 @@ class UserController(BaseController):
             search=search,
             
         )
-        return self.build_response("Users list", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Users list", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_user(
         self,
         user_id: str,
+        current_user: str = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
         storage_service: StorageService = Depends(get_storage_service)
     ):
@@ -100,6 +104,7 @@ class UserController(BaseController):
         self,
         user_id:str,
         data: UserProfileImageUpdate,
+        current_user: str = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
         storage_service : StorageService = Depends(get_storage_service)
     ) : 
@@ -133,6 +138,7 @@ class UserController(BaseController):
         self,
         user_id: str,
         data: UserPasswordUpdate,
+        current_user: str = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
     ):
         await service.update_user(user_id, {"password": data.new_password})
@@ -144,6 +150,7 @@ class UserController(BaseController):
         self,
         user_id: str,
         data: UserUpdate,
+        current_user: str = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
         company_service: CompanyService = Depends(get_company_service),
         address_service: AddressService = Depends(get_address_service),

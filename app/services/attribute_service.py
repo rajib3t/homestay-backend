@@ -1,11 +1,9 @@
 from uuid import uuid4
 
-from app.models.attribute_model import CreateFacility
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
-from starlette.exceptions import HTTPException
 import logging
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 from pymongo.errors import DuplicateKeyError
 from app.services.storage_service import StorageService
 from bson import ObjectId

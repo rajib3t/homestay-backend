@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from typing import Optional, List
 from enum import Enum
 import re
-from typing import ClassVar, List
+from typing import ClassVar
 from app.models.request import ListRequest
 from app.models.company_model import CompanyUpdate
 

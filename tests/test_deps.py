@@ -1,5 +1,4 @@
 import pytest
-from types import SimpleNamespace
 
 from app.deps import get_current_user, get_token_service
 from app.core.exceptions import AppException

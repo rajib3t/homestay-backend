@@ -1,9 +1,9 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
-from app.deps import get_location_service, get_storage_service
+from app.deps import get_location_service, get_storage_service, get_current_user
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.services.location_service import LocationService
 from app.services.storage_service import StorageService
@@ -31,7 +31,8 @@ from .base_controller import BaseController
 
 logger = logging.getLogger(__name__)
 
-_PAGINATION_META = lambda r: {"total": r["total"], "page": r["page"], "size": r["size"]}
+def _pagination_meta(r):
+    return {"total": r["total"], "page": r["page"], "size": r["size"]}
 
 
 class LocationController(BaseController):
@@ -81,6 +82,7 @@ class LocationController(BaseController):
     async def create_country(
         self,
         data: CountryCreate,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         country_id = await service.create_country(data.model_dump())
@@ -91,6 +93,7 @@ class LocationController(BaseController):
     async def get_country(
         self,
         country_id: str,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         country = await service.get_country(country_id)
@@ -103,6 +106,7 @@ class LocationController(BaseController):
         self,
         country_id: str,
         data: CountryUpdate,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         updated = await service.update_country(country_id, data.model_dump())
@@ -115,6 +119,7 @@ class LocationController(BaseController):
     async def toggle_country_status(
         self,
         country_id: str,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         updated = await service.toggle_country_status(country_id)
@@ -127,6 +132,7 @@ class LocationController(BaseController):
     async def list_countries(
         self,
         params: CountryList = Depends(),
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         search = self.build_search(name=params.name, code=params.code, status=params.status)
@@ -137,7 +143,7 @@ class LocationController(BaseController):
             sort_order=params.sort_order,
             search=search,
         )
-        return self.build_response("Countries retrieved successfully", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Countries retrieved successfully", data=result["items"], meta=_pagination_meta(result))
 
     # ---------------- CITY ---------------- #
 
@@ -147,6 +153,7 @@ class LocationController(BaseController):
         request: Request,
         city_data: Optional[str] = Form(None),
         image_file: Optional[UploadFile] = File(None),
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -168,6 +175,7 @@ class LocationController(BaseController):
     async def list_cities(
         self,
         params: CityList = Depends(),
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -180,12 +188,13 @@ class LocationController(BaseController):
             search=search,
             storage=storage_service,
         )
-        return self.build_response("Cities retrieved successfully", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Cities retrieved successfully", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_city(
         self,
         city_id: str,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -201,6 +210,7 @@ class LocationController(BaseController):
         request: Request,
         city_data: Optional[str] = Form(None),
         image_file: Optional[UploadFile] = File(None),
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -230,6 +240,7 @@ class LocationController(BaseController):
     async def list_country_cities(
         self,
         country_id: str,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
         storage_service: StorageService = Depends(get_storage_service),
     ):
@@ -250,6 +261,7 @@ class LocationController(BaseController):
     async def create_location(
         self,
         data: LocationCreate,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         location_id = await service.create_location(data.model_dump())
@@ -260,6 +272,7 @@ class LocationController(BaseController):
     async def list_locations(
         self,
         params: LocationList = Depends(),
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         search = self.build_search(name=params.name, city=params.city, country=params.country)
@@ -270,12 +283,13 @@ class LocationController(BaseController):
             sort_order=params.sort_order,
             search=search,
         )
-        return self.build_response("Locations retrieved successfully", data=result["items"], meta=_PAGINATION_META(result))
+        return self.build_response("Locations retrieved successfully", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_location(
         self,
         location_id: str,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         location = await service.get_location(location_id)
@@ -288,6 +302,7 @@ class LocationController(BaseController):
         self,
         location_id: str,
         data: LocationUpdate,
+        current_user: str = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         updated = await service.update_location(location_id, data.model_dump(exclude_none=True))
@@ -299,3 +314,14 @@ class LocationController(BaseController):
 
 controller = LocationController()
 router = controller.router
+
+
+@handle_api_exceptions
+async def get_country(
+    country_id: str,
+    service: LocationService = Depends(get_location_service),
+):
+    return await controller.get_country(
+        country_id=country_id,
+        service=service,
+    )

@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request, UploadFile
 def handle_exception(e: Exception):
     if isinstance(e, HTTPException):
         raise e
-    raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def parse_request_payload(request: Request, form_data: Optional[str]):

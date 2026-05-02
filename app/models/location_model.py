@@ -1,4 +1,4 @@
-from pydantic import AfterValidator, BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, Field
 from typing import Annotated, Optional
 from app.models.request import ListRequest
 UppercaseStr = Annotated[str, AfterValidator(lambda v: v.upper())]

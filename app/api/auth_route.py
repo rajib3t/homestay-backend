@@ -6,7 +6,6 @@ from app.services.user_service import UserService
 from app.services.token_service import TokenService
 from app.deps import get_user_service, get_token_service
 from app.core.security import JWTHandler
-from typing import Optional
 from app.core.config import settings
 from app.middleware.idempotency_route import IdempotencyRoute
 

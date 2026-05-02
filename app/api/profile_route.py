@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from app.schemas.user_schema import ProfileResponse
 from app.models.user_model import UserUpdate
 from app.services.user_service import UserService
 from app.deps import get_user_service, get_current_user
-from app.core.exceptions import AppException
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 

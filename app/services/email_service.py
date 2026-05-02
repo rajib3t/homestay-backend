@@ -1,10 +1,5 @@
 import smtplib
 from email.message import EmailMessage
-import urllib.request
-import urllib.parse
-import urllib.error
-import base64
-import json
 import asyncio
 import httpx
 from brevo import transactional_emails
@@ -88,7 +83,7 @@ class MailgunEmailService(BaseEmailService):
             data["html"] = html
             
         try:
-            response = self.client.messages.create(data=data, domain=self.domain)
+            self.client.messages.create(data=data, domain=self.domain)
             print(f"Mailgun config dispatch to {to_email}")
         except Exception as e:
             print(f"Mailgun unexpected error to {to_email}: {e}")

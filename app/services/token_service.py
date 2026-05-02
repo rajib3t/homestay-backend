@@ -54,8 +54,8 @@ class TokenService(BaseService):
                 return False, None, "Token has expired"
             
             return True, token_obj, None
-        except Exception as e:
-            return False, None, str(e)
+        except Exception:
+            return False, None, "Token verification failed"
 
     async def revoke_token(self, token_string: str):
         """Revokes a refresh token."""

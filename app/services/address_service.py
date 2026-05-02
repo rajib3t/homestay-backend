@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException

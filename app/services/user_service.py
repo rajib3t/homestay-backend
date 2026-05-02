@@ -1,8 +1,6 @@
 from datetime import datetime
-from re import search
 from typing import Optional
 
-from fastapi import logger
 from app.schemas.user_schema import UserData
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException

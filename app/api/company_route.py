@@ -34,6 +34,7 @@ class CompanyController(BaseController):
     async def create_company(
         self,
         data: CompanyCreate,
+        current_user: str = Depends(get_current_user),
         company_service: CompanyService = Depends(get_company_service),
     ):
         company_id = await company_service.create_company(data.model_dump())
@@ -44,6 +45,7 @@ class CompanyController(BaseController):
     async def get_company(
         self,
         company_id: str,
+        current_user: str = Depends(get_current_user),
         company_service: CompanyService = Depends(get_company_service),
     ):
         company = await company_service.get_company(company_id)
@@ -53,6 +55,7 @@ class CompanyController(BaseController):
     async def get_company_by_user(
         self,
         user_id: str,
+        current_user: str = Depends(get_current_user),
         company_service: CompanyService = Depends(get_company_service),
     ):
         company = await company_service.get_company_by_user_id(user_id)
@@ -63,6 +66,7 @@ class CompanyController(BaseController):
         self,
         company_id: str,
         data: CompanyUpdate,
+        current_user: str = Depends(get_current_user),
         company_service: CompanyService = Depends(get_company_service),
     ):
         await company_service.update_company(company_id, data.model_dump(exclude_unset=True))

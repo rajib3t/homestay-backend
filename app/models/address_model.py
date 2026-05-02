@@ -50,7 +50,6 @@ class AddressCreate(AddressBase):
     def validate_owner(cls, v, info):
         values = info.data
         has_user = values.get("user_id") is not None
-        has_company = values.get("company_id") is not None
 
         # Check if at least one owner is specified when validating the second field
         if info.field_name == "company_id" and not has_user and v is None:

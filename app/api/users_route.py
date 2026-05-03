@@ -1,6 +1,9 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from app.application.use_cases.users.get_user import GetUserUseCase
+from app.application.use_cases.users.update_user import UpdateUserUseCase
+from app.deps.use_cases import get_update_user_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.api.base_controller import BaseController
 from app.models.user_model import ListUsers, UserCreate, UserPasswordUpdate, UserProfileImageUpdate, UserUpdate
@@ -12,8 +15,8 @@ from app.services.address_service import AddressService
 from app.services.email_service import BaseEmailService
 from app.utils.api_utils import replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
-from app.deps import get_storage_service, get_user_service, get_email_service, get_company_service, get_address_service, get_current_user
-
+from app.deps import get_storage_service, get_user_service,  get_current_user, get_create_user_use_case, get_user_use_case
+from app.application.use_cases.users.create_user import CreateUserUseCase
 def _pagination_meta(r):
     return {"total": r["total"], "page": r["page"], "size": r["size"]}
 
@@ -45,20 +48,13 @@ class UserController(BaseController):
         
     @handle_api_exceptions
     async def create_user(
-        self,
-        data:UserCreate,
-        background_tasks: BackgroundTasks,
-        current_user: str = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-        email_service: BaseEmailService = Depends(get_email_service)
-    ):
-    
-        user_id =  await user_service.create_user(data.model_dump())
-        user = await user_service.get_user(user_id)
-        
-        # Add email sending to background tasks
-        background_tasks.add_task(email_service.send_welcome_email, to_email=data.email, username=data.username)
-        
+            self,
+            
+            data: UserCreate,
+            current_user: str = Depends(get_current_user),
+            use_case: CreateUserUseCase = Depends(get_create_user_use_case)
+):
+        user = await use_case.execute(data.model_dump())
         return self.build_response("User created", user)
     
     @handle_api_exceptions
@@ -92,10 +88,9 @@ class UserController(BaseController):
         self,
         user_id: str,
         current_user: str = Depends(get_current_user),
-        service: UserService = Depends(get_user_service),
-        storage_service: StorageService = Depends(get_storage_service)
+        use_case: GetUserUseCase = Depends(get_user_use_case)
     ):
-        user = await service.get_user(user_id, storage=storage_service, include_company=True)
+        user = await use_case.execute(user_id, include_company=True)
         return self.build_response("User", user)
     
 
@@ -150,45 +145,10 @@ class UserController(BaseController):
         self,
         user_id: str,
         data: UserUpdate,
-        current_user: str = Depends(get_current_user),
-        service: UserService = Depends(get_user_service),
-        company_service: CompanyService = Depends(get_company_service),
-        address_service: AddressService = Depends(get_address_service),
-        storage_service: StorageService = Depends(get_storage_service)
+        use_case: UpdateUserUseCase = Depends(get_update_user_use_case)
     ):
-        payload = data.model_dump(exclude_unset=True)
-        company_data = payload.pop("company", None)
-        # Update user fields first
-        await service.update_user(user_id, payload)
-
-        # Handle nested company update if provided
-        if company_data:
-            address_data = company_data.pop("address", None)
-
-            # Check if user already has a company
-            try:
-                existing_company = await company_service.get_company_by_user_id(user_id)
-                company_id = existing_company["id"]
-                # Update existing company
-                await company_service.update_company(company_id, company_data)
-            except Exception:
-                # Company doesn't exist, create new one
-                company_data["user_id"] = user_id
-                company_id = await company_service.create_company(company_data)
-
-            # Handle address update if provided
-            if address_data and company_id:
-                existing_address = await address_service.get_address_by_company_id(company_id)
-
-                if existing_address:
-                    await address_service.update_address(existing_address["id"], address_data)
-                else:
-                    address_data["company_id"] = company_id
-                    await address_service.create_address(address_data)
-
-        updated_user = await service.get_user(user_id, storage=storage_service, include_company=True)
-        
-        return self.build_response("User updated", updated_user)
+        user = await use_case.execute(user_id, data.model_dump(exclude_unset=True))
+        return self.build_response("User updated", user)
 
 user_controller = UserController()
 router = user_controller.router

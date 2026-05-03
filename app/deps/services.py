@@ -1,5 +1,8 @@
-from fastapi import Depends, Request
+"""Service dependency factories."""
+from fastapi import Depends
 from app.core.database import get_database
+from app.core.redis import get_redis
+from app.core.config import settings
 from app.services.address_service import AddressService
 from app.services.attribute_service import AttributeService
 from app.services.company_service import CompanyService
@@ -14,13 +17,10 @@ from app.repositories.location_repository import LocationRepository
 from app.repositories.redis_token_repository import RedisTokenRepository
 from app.repositories.token_repository import TokenRepository
 from app.repositories.user_repository import UserRepository
-from app.core.security import JWTHandler
-from app.core.config import settings
-from app.core.redis import get_redis
-from app.core.exceptions import AppException
 
 
 def get_user_service(db=Depends(get_database)):
+    """Get the user service with its dependencies."""
     return UserService(
         UserRepository(db),
         company_repository=CompanyRepository(db),
@@ -28,17 +28,35 @@ def get_user_service(db=Depends(get_database)):
     )
 
 
+def get_storage_service():
+    """Get the storage service."""
+    return StorageService()
+
+
+def get_address_service(db=Depends(get_database)):
+    """Get the address service."""
+    return AddressService(AddressRepository(db))
+
+
 def get_company_service(db=Depends(get_database)):
+    """Get the company service."""
     company_repo = CompanyRepository(db)
     address_repo = AddressRepository(db)
     return CompanyService(company_repo, address_repo)
 
 
-def get_address_service(db=Depends(get_database)):
-    return AddressService(AddressRepository(db))
+def get_location_service(db=Depends(get_database)):
+    """Get the location service."""
+    return LocationService(LocationRepository(db))
+
+
+def get_attribute_service(db=Depends(get_database)):
+    """Get the attribute service."""
+    return AttributeService(AttributeRepository(db))
 
 
 def get_token_service(db=Depends(get_database)):
+    """Get the token service with appropriate repository (Redis or DB)."""
     redis_client = get_redis()
     if redis_client is not None:
         session_repository = RedisTokenRepository(
@@ -50,44 +68,8 @@ def get_token_service(db=Depends(get_database)):
     return TokenService(TokenRepository(db), db=db)
 
 
-
-def get_current_user(request: Request) -> str:
-    """Dependency that returns the current user id (sub) from an access token.
-
-    Accepts `Authorization: Bearer <token>` or cookie `access_token`.
-    """
-    auth = request.headers.get("Authorization")
-    token = None
-    if auth and auth.lower().startswith("bearer "):
-        token = auth.split(" ", 1)[1]
-    else:
-        token = request.cookies.get("access_token")
-
-    if not token:
-        raise AppException(401, "Authorization token missing")
-
-    try:
-        payload = JWTHandler.decode_token(token)
-        if payload.get("type") != "access":
-            raise AppException(401, "Invalid token type")
-        return payload.get("sub")
-    except Exception:
-        raise AppException(401, "Invalid or expired token")
-    
-
-
-def get_location_service(db=Depends(get_database)):
-    return LocationService(LocationRepository(db))
-
-
-def get_storage_service():
-    return StorageService()
-
-def get_attribute_service(db=Depends(get_database)):
-    return AttributeService(AttributeRepository(db))
-
-
 def get_email_service():
+    """Get the email service based on configured provider."""
     from app.services.email_service import (
         MockEmailService, SMTPEmailService, 
         MailgunEmailService, BrevoEmailService

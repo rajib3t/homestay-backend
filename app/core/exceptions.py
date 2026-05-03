@@ -39,3 +39,13 @@ class AppException(HTTPException):
             ]
 
         super().__init__(status_code=status_code, detail=detail)
+
+
+
+class TokenInvalidError(AppException):
+    def __init__(self, message: str = "Invalid token"):
+        super().__init__(401, message, error_code="TOKEN_INVALID")
+
+class TokenExpiredError(AppException):
+    def __init__(self, message: str = "Token has expired"):
+        super().__init__(401, message, error_code="TOKEN_EXPIRED")

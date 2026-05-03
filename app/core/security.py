@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
 import bcrypt
 from app.core.config import settings
+from app.core.exceptions import TokenExpiredError, TokenInvalidError
 
 class JWTHandler:
 
@@ -36,7 +38,12 @@ class JWTHandler:
 
     @staticmethod
     def decode_token(token: str):
-        return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        try:
+            return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        except ExpiredSignatureError as e:
+            raise TokenExpiredError(str(e))
+        except (JWTClaimsError, JWTError) as e:
+            raise TokenInvalidError(str(e))
 
 class PasswordHasher:
 

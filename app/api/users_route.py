@@ -17,6 +17,8 @@ from app.utils.api_utils import replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
 from app.deps import get_storage_service, get_user_service,  get_current_user, get_create_user_use_case, get_user_use_case
 from app.application.use_cases.users.create_user import CreateUserUseCase
+from app.deps.auth import CurrentUser
+import logging
 def _pagination_meta(r):
     return {"total": r["total"], "page": r["page"], "size": r["size"]}
 
@@ -51,17 +53,20 @@ class UserController(BaseController):
             self,
             
             data: UserCreate,
-            current_user: str = Depends(get_current_user),
+            current_user: CurrentUser = Depends(get_current_user),
             use_case: CreateUserUseCase = Depends(get_create_user_use_case)
-):
-        user = await use_case.execute(data.model_dump())
+):      
+        
+        create_payload = data.model_dump()
+        create_payload["created_by"] = current_user.id
+        user = await use_case.execute(create_payload)
         return self.build_response("User created", user)
     
     @handle_api_exceptions
     async def list_users(
         self,
         params:  ListUsers= Depends(),
-        current_user: str = Depends(get_current_user),
+        current_user: CurrentUser = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
         
     ):
@@ -87,7 +92,7 @@ class UserController(BaseController):
     async def get_user(
         self,
         user_id: str,
-        current_user: str = Depends(get_current_user),
+        current_user: CurrentUser = Depends(get_current_user),
         use_case: GetUserUseCase = Depends(get_user_use_case)
     ):
         user = await use_case.execute(user_id, include_company=True)
@@ -99,7 +104,7 @@ class UserController(BaseController):
         self,
         user_id:str,
         data: UserProfileImageUpdate,
-        current_user: str = Depends(get_current_user),
+        current_user: CurrentUser = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
         storage_service : StorageService = Depends(get_storage_service)
     ) : 
@@ -133,7 +138,7 @@ class UserController(BaseController):
         self,
         user_id: str,
         data: UserPasswordUpdate,
-        current_user: str = Depends(get_current_user),
+        current_user: CurrentUser = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
     ):
         await service.update_user(user_id, {"password": data.new_password})
@@ -145,9 +150,12 @@ class UserController(BaseController):
         self,
         user_id: str,
         data: UserUpdate,
+        current_user: CurrentUser = Depends(get_current_user),
         use_case: UpdateUserUseCase = Depends(get_update_user_use_case)
     ):
-        user = await use_case.execute(user_id, data.model_dump(exclude_unset=True))
+        update_payload = data.model_dump(exclude_unset=True)
+        update_payload["updated_by"] = current_user.id
+        user = await use_case.execute(user_id, update_payload)
         return self.build_response("User updated", user)
 
 user_controller = UserController()

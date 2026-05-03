@@ -23,10 +23,12 @@ class UpdateUserUseCase:
                 company = await self.company_service.get_company_by_user_id(user_id, include_address=False)
                 company_id = company["id"]
                 if company_data:
+                    company_data["updated_by"] = payload.get("updated_by")
                     await self.company_service.update_company(company_id, company_data)
             except AppException:
                 if company_data:
                     company_data["user_id"] = user_id
+                    company_data["created_by"] = payload.get("updated_by")
                     company_id = await self.company_service.create_company(company_data)
                 else:
                     company_id = None
@@ -41,10 +43,12 @@ class UpdateUserUseCase:
 
                 address = await self.address_service.get_address_by_company_id(company_id)
                 if address:
+                    address_data["updated_by"] = payload.get("updated_by")
                     await self.address_service.update_address(address["id"], address_data)
                 else:
                     address_data["company_id"] = company_id
                     address_data["user_id"] = user_id
+                    address_data["created_by"] = payload.get("updated_by")
                     await self.address_service.create_address(address_data)
 
         # Return user with company data if present

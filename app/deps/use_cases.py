@@ -1,9 +1,12 @@
 """Use case dependency factories."""
 from fastapi import Depends
+from app.application.use_cases.auth.login_user import LoginUserUseCase
+from app.application.use_cases.auth.refresh_token import RefreshTokenUseCase
 from app.application.use_cases.users.get_user import GetUserUseCase
 from app.application.use_cases.users.create_user import CreateUserUseCase
 from app.application.use_cases.users.update_user import UpdateUserUseCase
 from app.deps.services import (
+    get_token_service,
     get_user_service,
     get_company_service,
     get_address_service,
@@ -11,7 +14,19 @@ from app.deps.services import (
 )
 from app.deps.events import get_event_bus
 
+# app/deps/use_cases.py
 
+def get_login_use_case(
+    user_service=Depends(get_user_service),
+    token_service=Depends(get_token_service),
+):
+    return LoginUserUseCase(user_service, token_service)
+
+
+def get_refresh_use_case(
+    token_service=Depends(get_token_service),
+):
+    return RefreshTokenUseCase(token_service)
 def get_create_user_use_case(
     user_service=Depends(get_user_service),
     event_bus=Depends(get_event_bus)
@@ -45,3 +60,5 @@ def get_update_user_use_case(
         company_service,
         address_service,
     )
+
+

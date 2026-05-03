@@ -9,7 +9,8 @@ from app.core.logging_config import configure_logging
 from app.core.redis import connect_to_redis, close_redis_connection
 from app.core.exceptions import AppException
 from app.api.router import api_router
-
+from app.infrastructure.event_bus.worker import worker_loop
+import asyncio
 
 class Application:
     def __init__(self) -> None:
@@ -28,33 +29,41 @@ class Application:
     async def _lifespan(app: FastAPI):
         logger = logging.getLogger(__name__)
 
-        # Startup
+        worker_task = None
+
         try:
             await connect_to_mongo()
             logger.info("MongoDB connected")
+
             await connect_to_redis()
-            # Ensure required indexes exist (run once at startup)
+            logger.info("Redis connected")
+
+            # 🔥 START WORKER (DEV ONLY)
+            worker_task = asyncio.create_task(worker_loop())
+
+            # indexes
             try:
                 db = get_database()
                 from app.core.create_indexes import IndexCreator
-
                 await IndexCreator.ensure_indexes(db)
             except Exception:
-                logger.exception("Failed to create/ensure MongoDB indexes during startup")
+                logger.exception("Index creation failed")
+
         except Exception:
-            logger.exception("Failed to connect to MongoDB during startup")
+            logger.exception("Startup failure")
             raise
 
-        yield  # Application runs here
+        yield
 
-        # Shutdown
+        # 🔥 STOP WORKER
+        if worker_task:
+            worker_task.cancel()
+
         try:
             await close_redis_connection()
-            logger.info("Redis connection closed")
             await close_mongo_connection()
-            logger.info("MongoDB connection closed")
         except Exception:
-            logger.exception("Error while closing application connections")
+            logger.exception("Shutdown failure")
 
     def _register_middleware(self):
         # Authentication is enforced with `get_current_user` dependencies.

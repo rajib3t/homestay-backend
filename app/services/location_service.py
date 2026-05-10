@@ -17,7 +17,7 @@ class LocationService(BaseService):
         self.repository = repository
   
 
-    async def create_country(self, country_data: Dict):
+    async def create_country(self, country_data: Dict, session=None):
 
         # Normalize values
         country_data["name"] = country_data["name"].strip()
@@ -27,6 +27,7 @@ class LocationService(BaseService):
         existing = await self.repository.find_country_conflict(
             country_data["name"],
             country_data["code"],
+            session=session
         )
 
         if existing:
@@ -48,7 +49,7 @@ class LocationService(BaseService):
 
         try:
             self.timestamps(country_data, is_new=True)
-            result = await self.repository.insert_country(country_data)
+            result = await self.repository.insert_country(country_data, session=session)
             return str(result.inserted_id)
 
         except DuplicateKeyError as e:
@@ -322,12 +323,8 @@ class LocationService(BaseService):
     async def create_city(
         self,
         city_data: dict,
-        image_bytes: Optional[bytes] = None,
-        content_type: Optional[str] = None,
-        storage: Optional[StorageService] = None
     ):
-
-        # Normalize name
+        # Normalize
         city_data["name"] = city_data["name"].strip()
 
         # Validate country id
@@ -351,60 +348,33 @@ class LocationService(BaseService):
                 field="country"
             )
 
-        # Check duplicate city in same country
-        existing = await self.repository.find_city_conflict(city_data["name"], country_id)
+        # Check duplicate
+        existing = await self.repository.find_city_conflict(
+            city_data["name"], country_id
+        )
 
         if existing:
             raise AppException(
                 status_code=409,
-                message="City with this name already exists in the specified country",
+                message="City already exists",
                 error_code="CITY_ALREADY_EXISTS",
                 field="name"
             )
-
-        # Image upload
-        if image_bytes and storage:
-
-            slug = re.sub(r"[^a-z0-9]+", "-", city_data["name"].lower()).strip("-")
-
-            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}.webp"
-
-            # if content_type:
-            #     if "jpeg" in content_type or "jpg" in content_type:
-            #         key += ".jpg"
-            #     elif "png" in content_type:
-            #         key += ".png"
-            #     elif "webp" in content_type:
-            #         key += ".webp"
-
-            await storage.convert_and_upload_webp(
-                key=key, 
-                data=image_bytes, 
-                quality=90, 
-                lat=17.438001,
-                lon=78.395236,
-                
-                )
-            # await storage.upload_bytes(key, image_bytes, content_type)
-
-            city_data["image"] = key
 
         city_data["country"] = country_id
 
+        self.timestamps(city_data, is_new=True)
+
         try:
-            
-            self.timestamps(city_data, is_new=True)
             result = await self.repository.insert_city(city_data)
-            return str(result.inserted_id)
-    
+            return result.inserted_id   # return ObjectId (not string)
         except DuplicateKeyError:
             raise AppException(
                 status_code=409,
-                message="City with this name already exists in the specified country",
+                message="City already exists",
                 error_code="CITY_ALREADY_EXISTS",
                 field="name"
             )
-
     async def update_city(
         self,
         city_id: str,

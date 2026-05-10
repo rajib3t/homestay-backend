@@ -4,7 +4,8 @@ import boto3
 from aioboto3 import Session
 from botocore.exceptions import ClientError
 from PIL import Image
-
+import base64
+import re
 from app.core.config import settings
 
 
@@ -138,3 +139,39 @@ class StorageService:
         degrees = int(value)
         minutes = (value - degrees) * 60
         return f"{degrees},{minutes:.6f}"
+
+    async def convert_base64_to_bytes(
+        self,
+        base64_string: str,
+    ) -> tuple[bytes, str]:
+        """
+        Convert base64 image string into raw bytes.
+
+        Supports:
+        data:image/webp;base64,...
+        data:image/png;base64,...
+        data:image/jpeg;base64,...
+
+        Returns:
+            (image_bytes, mime_type)
+        """
+
+        if not base64_string:
+            raise ValueError("Base64 image is empty")
+
+        pattern = r"^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$"
+
+        match = re.match(pattern, base64_string)
+
+        if not match:
+            raise ValueError("Invalid base64 image format")
+
+        mime_type = match.group(1)
+        encoded = match.group(2)
+
+        try:
+            image_bytes = base64.b64decode(encoded)
+        except Exception as exc:
+            raise ValueError(f"Cannot decode base64 image: {exc}") from exc
+
+        return image_bytes, mime_type

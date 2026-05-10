@@ -1,6 +1,7 @@
 """Authentication and security dependencies."""
 import logging
 from dataclasses import dataclass
+from typing import Optional
 from fastapi import Request
 from app.core.security import JWTHandler
 from app.core.exceptions import AppException, TokenExpiredError, TokenInvalidError
@@ -16,7 +17,7 @@ class CurrentUser:
     user_type: str  # was: role
 
 
-def _extract_token(request: Request) -> str | None:
+def _extract_token(request: Request) -> Optional[str]:
     """Extract a bearer token from the Authorization header or cookie."""
     auth = request.headers.get("Authorization")
     if auth and auth.lower().startswith("bearer "):

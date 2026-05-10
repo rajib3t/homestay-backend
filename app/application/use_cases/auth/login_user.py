@@ -19,7 +19,7 @@ class LoginUserUseCase:
 
         # Access token
         access_token = JWTHandler.create_access_token(
-            data={"sub": str(user["_id"])},
+            data={"sub": str(user["id"])},
             additional_claims={
                 "email": user["email"],
                 "user_type": user["user_type"]
@@ -30,7 +30,7 @@ class LoginUserUseCase:
 
         # Refresh token
         refresh_token = await self.token_service.create_token(
-            identity=str(user["_id"]),
+            identity=str(user["id"]),
             additional_claims={
                 "email": user["email"],
                 "user_type": user["user_type"]

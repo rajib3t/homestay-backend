@@ -3,6 +3,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from app.services.user_service import UserService
+from app.application.use_cases.users.update_user import UpdateUserUseCase
 from app.core.exceptions import AppException
 from app.repositories.user_repository import UserRepository
 
@@ -117,6 +118,42 @@ async def test_create_get_update_user():
     authenticated = await svc.authenticate_user("test@example.com", "secret")
     assert authenticated["email"] == "test@example.com"
     assert "password" not in authenticated
+
+
+@pytest.mark.asyncio
+async def test_update_user_returns_presigned_image_url():
+    db = FakeDB()
+    svc = UserService(UserRepository(db))
+    storage = SimpleNamespace(generate_presigned_url=lambda key: f"https://presigned.example.com/{key}")
+
+    user_data = {
+        "email": "test-image@example.com",
+        "username": "tester-image",
+        "password": "secret",
+        "user_type": "normal",
+        "first_name": "T",
+        "last_name": "User",
+        "mobile": "123",
+        "image": "profile_images/test.jpg",
+    }
+
+    user_id = await svc.create_user(user_data.copy())
+    user = await svc.get_user(user_id, storage=storage)
+    assert user["image"] == "https://presigned.example.com/profile_images/test.jpg"
+
+    async def get_company_by_user_id(*args, **kwargs):
+        return None
+
+    use_case = UpdateUserUseCase(
+        svc,
+        SimpleNamespace(get_company_by_user_id=get_company_by_user_id),
+        SimpleNamespace(),
+        storage,
+    )
+    updated = await use_case.execute(user_id, {"first_name": "Updated"})
+
+    assert updated["first_name"] == "Updated"
+    assert updated["image"] == "https://presigned.example.com/profile_images/test.jpg"
 
 
 @pytest.mark.asyncio

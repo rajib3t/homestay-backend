@@ -27,7 +27,7 @@ class CompanyService(BaseService):
 
         return company
 
-    async def create_company(self, company_data: dict):
+    async def create_company(self, company_data: dict, session=None):
         # Check if company with this email already exists
         existing = await self.repository.find_by_email(company_data["email"])
         if existing:
@@ -53,14 +53,14 @@ class CompanyService(BaseService):
 
         try:
             self.timestamps(company_data, is_new=True)
-            result = await self.repository.insert(company_data)
+            result = await self.repository.insert(company_data, session=session)
             company_id = str(result.inserted_id)
 
             # Create address if provided
             if address_data and self.address_repository:
                 address_data["company_id"] = company_id
                 self.timestamps(address_data, is_new=True)
-                await self.address_repository.insert(address_data)
+                await self.address_repository.insert(address_data, session=session)
 
             return company_id
         except DuplicateKeyError as e:
@@ -115,7 +115,7 @@ class CompanyService(BaseService):
 
         return serialized
 
-    async def update_company(self, company_id: str, update_data: dict):
+    async def update_company(self, company_id: str, update_data: dict, session=None):
         if not update_data:
             raise AppException(400, "No fields provided for update")
 
@@ -126,7 +126,7 @@ class CompanyService(BaseService):
                 raise AppException(409, "Email already exists")
 
         self.timestamps(update_data)
-        result = await self.repository.update_by_id(company_id, update_data)
+        result = await self.repository.update_by_id(company_id, update_data, session=session)
 
         if result.matched_count == 0:
             raise AppException(404, "Company not found")

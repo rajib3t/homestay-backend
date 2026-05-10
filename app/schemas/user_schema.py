@@ -1,5 +1,6 @@
 from typing import Optional
 
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 from pydantic import ConfigDict
 from app.schemas.response import BaseResponse, PaginationResponse
@@ -13,8 +14,8 @@ class UserBase(BaseModel):
     mobile: str
     image: Optional[str] = None
     company: Optional[CompanyResponse] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 class UserData(UserBase):
     id: str = Field(..., alias="_id")

@@ -29,9 +29,9 @@ class AddressService(BaseService):
 
         return address
 
-    async def create_address(self, address_data: dict):
+    async def create_address(self, address_data: dict, session=None):
         self.timestamps(address_data, is_new=True)
-        result = await self.repository.insert(address_data)
+        result = await self.repository.insert(address_data, session=session)
         return str(result.inserted_id)
 
     async def get_address_by_company_id(self, company_id: str):
@@ -46,12 +46,12 @@ class AddressService(BaseService):
             raise AppException(404, "Address not found")
         return self._serialize_address(address)
 
-    async def update_address(self, address_id: str, update_data: dict):
+    async def update_address(self, address_id: str, update_data: dict, session=None):
         if not update_data:
             raise AppException(400, "No fields provided for update")
 
         self.timestamps(update_data)
-        result = await self.repository.update_by_id(address_id, update_data)
+        result = await self.repository.update_by_id(address_id, update_data, session=session)
 
         if result.matched_count == 0:
             raise AppException(404, "Address not found")

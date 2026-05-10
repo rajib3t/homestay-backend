@@ -119,7 +119,10 @@ async def refresh_token(
     response: Response,
     use_case: RefreshTokenUseCase = Depends(get_refresh_use_case)
 ):
-    token = request.cookies.get("refresh_token")
+    body = await request.json()
+
+    token = body.get("refresh_token") or request.cookies.get("refresh_token")
+
 
     if not token:
         raise HTTPException(401, "Refresh token missing")

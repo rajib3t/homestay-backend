@@ -11,6 +11,7 @@ from app.repositories.address_repository import AddressRepository
 from pymongo.errors import DuplicateKeyError
 
 from app.services.storage_service import StorageService
+
 class UserService(BaseService):
     def __init__(self, repository: UserRepository, company_repository: CompanyRepository = None, address_repository: AddressRepository = None):
         super().__init__(repository.db)
@@ -18,22 +19,32 @@ class UserService(BaseService):
         self.company_repository = company_repository
         self.address_repository = address_repository
 
+    
+ 
+
+
     @staticmethod
     def _serialize_user(user: dict):
         user = user.copy()
-        user.pop("password", None)
-        user["_id"] = str(user["_id"])
 
-        if user.get("created_at") and isinstance(user.get("created_at"), datetime):
+        # Remove sensitive fields
+        user.pop("password", None)
+
+        # Normalize Mongo ID
+        if "_id" in user:
+            user["id"] = str(user.pop("_id"))
+
+        # Serialize datetimes
+        if user.get("created_at") and isinstance(user["created_at"], datetime):
             user["created_at"] = user["created_at"].isoformat()
 
-        if user.get("updated_at") and isinstance(user.get("updated_at"), datetime):
+        if user.get("updated_at") and isinstance(user["updated_at"], datetime):
             user["updated_at"] = user["updated_at"].isoformat()
 
         return user
 
-    async def create_user(self, user_data: dict):
-        existing = await self.repository.find_user_conflict(user_data["username"], user_data["email"], user_data["mobile"])
+    async def create_user(self, user_data: dict, session=None):
+        existing = await self.repository.find_user_conflict(user_data["username"], user_data["email"], user_data["mobile"], session=session)
 
         if existing:
             if existing.get("username") == user_data["username"]:
@@ -62,7 +73,7 @@ class UserService(BaseService):
             # Hash the password
             user_data["password"] = PasswordHasher.hash_password(user_data["password"])
             self.timestamps(user_data, is_new=True)
-            result = await self.repository.insert(user_data)
+            result = await self.repository.insert(user_data, session=session)
             return str(result.inserted_id)
         except DuplicateKeyError as e:
             # This is a fallback in case of a race condition where two requests try to create a user with the same email/username/mobile at the same time.
@@ -95,14 +106,14 @@ class UserService(BaseService):
 
             raise
 
-    async def get_user(self, user_id: str):
-        user = await self.repository.find_by_id(user_id)
+    async def get_user(self, user_id: str, session=None):
+        user = await self.repository.find_by_id(user_id, session=session)
         if not user:
             raise AppException(404, "User not found")
 
         return self._serialize_user(user)
 
-    async def update_user(self, user_id: str, update_data: dict):
+    async def update_user(self, user_id: str, update_data: dict, session=None):
         if not update_data:
             raise AppException(400, "No fields provided for update")
 
@@ -118,11 +129,11 @@ class UserService(BaseService):
         if "password" in update_data:
             update_data["password"] = PasswordHasher.hash_password(
                 update_data["password"]
-        )
+            )
 
         self.timestamps(update_data)
 
-        result = await self.repository.update_by_id(user_id, update_data)
+        result = await self.repository.update_by_id(user_id, update_data, session=session)
 
         if result.matched_count == 0:
             raise AppException(404, "User not found")
@@ -202,4 +213,10 @@ class UserService(BaseService):
         }
     
 
-    
+    def _serialize_user(self, user: dict) -> dict:
+            user = user.copy()
+
+            if "_id" in user:
+                user["id"] = str(user.pop("_id"))
+
+            return user

@@ -15,13 +15,14 @@ class AddressRepository(BaseRepository):
     async def find_by_user_id(self, user_id: str):
         return await self.collection.find_one({"user_id": user_id})
 
-    async def insert(self, address_data: dict):
-        return await self.collection.insert_one(address_data)
+    async def insert(self, address_data: dict, session=None):
+        return await self.collection.insert_one(address_data, session=session)
 
-    async def update_by_id(self, address_id: str, update_data: dict):
+    async def update_by_id(self, address_id: str, update_data: dict, session=None):
         return await self.collection.update_one(
             {"_id": self.to_object_id(address_id)},
             {"$set": update_data},
+            session=session,
         )
 
     async def delete_by_company_id(self, company_id: str):

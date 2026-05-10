@@ -3,8 +3,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
+from app.application.use_cases.locations.create_city import CreateCityUseCase
+from app.application.use_cases.locations.country import CreateCountryUseCase
 from app.deps import get_location_service, get_storage_service, get_current_user
+from app.deps.auth import CurrentUser
+from app.deps.use_cases import get_create_city_use_case
+from app.deps.locations_use import get_create_country_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
+from app.models.attribute_model import CreateAmenity
 from app.services.location_service import LocationService
 from app.services.storage_service import StorageService
 
@@ -82,12 +88,10 @@ class LocationController(BaseController):
     async def create_country(
         self,
         data: CountryCreate,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: CreateCountryUseCase = Depends(get_create_country_use_case),
     ):
-        country_id = await service.create_country(data.model_dump())
-        country = await service.get_country(country_id)
-        return self.build_response("Country created successfully", country)
+        result = await use_case.execute(data.model_dump())
+        return self.build_response("Country created successfully", result)
 
     @handle_api_exceptions
     async def get_country(
@@ -132,7 +136,7 @@ class LocationController(BaseController):
     async def list_countries(
         self,
         params: CountryList = Depends(),
-        current_user: str = Depends(get_current_user),
+        current_user: CurrentUser = Depends(get_current_user),
         service: LocationService = Depends(get_location_service),
     ):
         search = self.build_search(name=params.name, code=params.code, status=params.status)
@@ -150,25 +154,14 @@ class LocationController(BaseController):
     @handle_api_exceptions
     async def create_city(
         self,
-        request: Request,
-        city_data: Optional[str] = Form(None),
-        image_file: Optional[UploadFile] = File(None),
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        data: CityCreate,
+        use_case: CreateCityUseCase = Depends(get_create_city_use_case),
     ):
-        payload = await parse_request_payload(request, city_data)
-        image_field = payload.pop("image", None)
-        image_bytes, content_type = await parse_image_input(image_file, image_field)
 
-        city_model = CityCreate.model_validate(payload)
-        city_id = await service.create_city(
-            city_model.model_dump(),
-            image_bytes=image_bytes,
-            content_type=content_type,
-            storage=storage_service,
-        )
-        city = await service.get_city(city_id, storage=storage_service)
+        payload = data.model_dump()
+
+        city = await use_case.execute(payload)
+
         return self.build_response("City created successfully", city)
 
     @handle_api_exceptions

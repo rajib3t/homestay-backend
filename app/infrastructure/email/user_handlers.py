@@ -5,9 +5,9 @@ async def send_welcome_email_handler(event):
     
     email_service = get_email_service()  # inject dependency
 
-    user = event.user
+    user = getattr(event, "user", None) or event.payload
 
     await email_service.send_welcome_email(
         to_email=user["email"],
-        username=user["username"]
+        username=user.get("username") or user["email"].split("@", 1)[0]
     )

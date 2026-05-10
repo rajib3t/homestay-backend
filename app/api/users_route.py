@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from app.application.use_cases.users.get_user import GetUserUseCase
+from app.application.use_cases.users.update_profile_image import UpdateUserProfileImageUseCase
 from app.application.use_cases.users.update_user import UpdateUserUseCase
-from app.deps.use_cases import get_update_user_use_case
+from app.deps.use_cases import get_update_profile_image_use_case, get_update_user_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.api.base_controller import BaseController
 from app.models.user_model import ListUsers, UserCreate, UserPasswordUpdate, UserProfileImageUpdate, UserUpdate
@@ -102,36 +103,13 @@ class UserController(BaseController):
     @handle_api_exceptions
     async def update_profile_image(
         self,
-        user_id:str,
+        user_id: str,
         data: UserProfileImageUpdate,
         current_user: CurrentUser = Depends(get_current_user),
-        service: UserService = Depends(get_user_service),
-        storage_service : StorageService = Depends(get_storage_service)
-    ) : 
-        
-        payload = data.model_dump()
-        image = payload.get("image")
-
-        if image is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
-        
-        if isinstance(image, str) and image.startswith("data:"):
-            existing_user = await service.get_user(user_id)
-            if existing_user is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-            
-            old_image = existing_user.get("image") if existing_user.get("image") else None
-            payload['image'] = await replace_data_url_asset(
-                storage_service,
-                image,
-                "profile_images",
-                user_id,
-                old_key=old_image
-            )
-                
-        await service.update_user(user_id, {"image": payload['image']})
-        updated_user = await service.get_user(user_id, storage=storage_service)
-        return self.build_response("Profile image updated", updated_user)
+        use_case: UpdateUserProfileImageUseCase = Depends(get_update_profile_image_use_case)
+    ):
+        result = await use_case.execute(user_id, data.image)
+        return self.build_response("Profile image updated", result)
 
     @handle_api_exceptions
     async def update_user_password(
@@ -140,9 +118,10 @@ class UserController(BaseController):
         data: UserPasswordUpdate,
         current_user: CurrentUser = Depends(get_current_user),
         service: UserService = Depends(get_user_service),
+        storage_service: StorageService = Depends(get_storage_service),
     ):
         await service.update_user(user_id, {"password": data.new_password})
-        user_data = await service.get_user(user_id)
+        user_data = await service.get_user(user_id, storage=storage_service)
         return self.build_response("Password updated", user_data)
        
     @handle_api_exceptions

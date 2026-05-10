@@ -53,3 +53,9 @@ def get_database():
     if not db.client:
         raise RuntimeError("Database client is not initialized")
     return db.client.get_default_database()
+
+
+def get_client():
+    if not db.client:
+        raise RuntimeError("Mongo client is not initialized")
+    return db.client

@@ -32,6 +32,7 @@ class CityCreate(BaseModel):
     name: str
     country: str
     is_popular: bool = False
+    image: Optional[str] = None
     
 
 

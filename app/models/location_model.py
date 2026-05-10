@@ -1,13 +1,20 @@
 from pydantic import AfterValidator, BaseModel, Field
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Sequence, ClassVar
 from app.models.request import ListRequest
 UppercaseStr = Annotated[str, AfterValidator(lambda v: v.upper())]
 
 class CountryList(ListRequest):
-    name: Optional[str] = None 
+
+    name: Optional[str] = None
     code: Optional[str] = None
     status: Optional[bool] = None
-    _allowed_sort_fields = ['name', 'code']
+
+    allowed_sort_fields: ClassVar[Sequence[str]] = (
+        "name",
+        "code",
+        "created_at",
+        "updated_at",
+    )
 
 
 class CityList(ListRequest):

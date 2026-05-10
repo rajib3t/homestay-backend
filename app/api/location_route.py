@@ -3,12 +3,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
+from app.application.dto.country_query import CountryQuery
 from app.application.use_cases.locations.create_city import CreateCityUseCase
-from app.application.use_cases.locations.country import CreateCountryUseCase
+from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountriesUseCase, GetCountryUseCase
 from app.deps import get_location_service, get_storage_service, get_current_user
 from app.deps.auth import CurrentUser
 from app.deps.use_cases import get_create_city_use_case
-from app.deps.locations_use import get_create_country_use_case
+from app.deps.locations_use import get_create_country_use_case, get_list_countries_use_case, get_single_country_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.models.attribute_model import CreateAmenity
 from app.services.location_service import LocationService
@@ -97,12 +98,9 @@ class LocationController(BaseController):
     async def get_country(
         self,
         country_id: str,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: GetCountryUseCase = Depends(get_single_country_use_case)
     ):
-        country = await service.get_country(country_id)
-        if not country:
-            raise HTTPException(status_code=404, detail="Country not found")
+        country = await use_case.execute(country_id)
         return self.build_response("Country retrieved successfully", country)
 
     @handle_api_exceptions
@@ -136,18 +134,28 @@ class LocationController(BaseController):
     async def list_countries(
         self,
         params: CountryList = Depends(),
-        current_user: CurrentUser = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: GetCountriesUseCase = Depends(get_list_countries_use_case),
     ):
-        search = self.build_search(name=params.name, code=params.code, status=params.status)
-        result = await service.list_countries(
+
+        query = CountryQuery(
             page=params.page,
             size=params.size,
             sort_by=params.sort_by,
             sort_order=params.sort_order,
-            search=search,
+            filters=self.build_search(
+                name=params.name,
+                code=params.code,
+                status=params.status,
+            ),
         )
-        return self.build_response("Countries retrieved successfully", data=result["items"], meta=_pagination_meta(result))
+
+        result = await use_case.execute(query)
+
+        return self.build_response(
+            "Countries retrieved successfully",
+            data=result["items"],
+            meta=_pagination_meta(result),
+        )
 
     # ---------------- CITY ---------------- #
 

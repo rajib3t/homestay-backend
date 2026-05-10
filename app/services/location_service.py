@@ -1,6 +1,7 @@
 from starlette.exceptions import HTTPException
 import logging
 
+from app.application.dto.country_query import CountryQuery
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from bson import ObjectId
@@ -182,131 +183,15 @@ class LocationService(BaseService):
         return True
 
     async def list_countries(
-    self,
-    page: int = 1,
-    size: int = 10,
-    sort_by: str = "created_at",
-    sort_order: str = "desc",
-    search: Optional[Dict] = None
-):
+        self,
+        query: CountryQuery,
+        session=None,
+    ):
 
-        try:
-            page = int(page)
-            size = int(size)
-        except Exception:
-            raise AppException(
-                status_code=400,
-                message="Invalid pagination parameters",
-                error_code="INVALID_PAGINATION",
-                field="pagination"
-            )
-
-        if page < 1 or size < 1:
-            raise AppException(
-                status_code=400,
-                message="page and size must be positive integers",
-                error_code="INVALID_PAGINATION",
-                field="pagination"
-            )
-
-        skip = (page - 1) * size
-        sort_direction = 1 if sort_order.lower() == "asc" else -1
-
-        # -------- Build Search Query --------
-        query = {}
-
-        if search:
-            for k, v in search.items():
-
-                if isinstance(v, dict):
-                    query[k] = v
-
-                elif isinstance(v, str):
-                    lv = v.strip().lower()
-
-                    if lv in ("true", "false"):
-                        query[k] = lv == "true"
-                    else:
-                        query[k] = {"$regex": v, "$options": "i"}
-
-                else:
-                    query[k] = v
-
-        pipeline = [
-
-            # Match filters
-            {
-                "$match": query
-            },
-
-            # Sort
-            {
-                "$sort": {sort_by: sort_direction}
-            },
-
-            # Pagination
-            {
-                "$skip": skip
-            },
-            {
-                "$limit": size
-            },
-
-            # Lookup cities
-            {
-                "$lookup": {
-                    "from": "cities",
-                    "localField": "_id",
-                    "foreignField": "country",
-                    "as": "cities"
-                }
-            },
-
-            # Add city_count
-            {
-                "$addFields": {
-                    "city_count": {"$size": "$cities"}
-                }
-            },
-
-            # Convert ObjectId to string
-            {
-                "$addFields": {
-                    "_id": {"$toString": "$_id"},
-                    "cities": {
-                        "$map": {
-                            "input": "$cities",
-                            "as": "city",
-                            "in": {
-                                "_id": {"$toString": "$$city._id"},
-                                "name": "$$city.name",
-                                "country": {"$toString": "$$city.country"},
-                                "created_at": "$$city.created_at",
-                                "updated_at": "$$city.updated_at"
-                            }
-                        }
-                    }
-                }
-            }
-
-        ]
-
-        cursor = self.repository.aggregate_countries(pipeline)
-
-        items = []
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            items.append(doc)
-
-        
-        total = await self.repository.count_countries(query)
-
-        return {
-            "items": items,
-            "total": total,
-            "page": page,
-            "size": size
-        }
+        return await self.repository.list_countries(
+            query=query,
+            session=session,
+        )
     
     async def get_country(self, country_id: str):
         # validate ObjectId format first
@@ -317,6 +202,9 @@ class LocationService(BaseService):
         if not doc:
             raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
         doc["_id"] = str(doc["_id"])
+        # Ensure dial_code field exists for backward compatibility
+        if "dial_code" not in doc:
+            doc["dial_code"] = 1
         return doc
 
     

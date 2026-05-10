@@ -5,11 +5,24 @@ import asyncio
 import logging
 
 from app.core.redis import get_redis
+from app.core.database import get_database
+from app.repositories.outbox_repository import OutboxRepository
+from bson import ObjectId
 
-from app.domain.events.user_events import UserCreatedEvent
+from app.domain.events.event_factory import event_factory
 from app.infrastructure.email.user_handlers import send_welcome_email_handler
-
+from app.infrastructure.handlers.country_handlers import log_country_created_handler   
+from app.infrastructure.handlers.user_handlers import log_user_updated_handler
+ 
 logger = logging.getLogger(__name__)
+
+# =========================================================
+# COUNTRY EVENT HANDLERS
+# =========================================================
+
+
+
+
 
 # =========================================================
 # EVENT -> HANDLER MAP
@@ -18,6 +31,12 @@ logger = logging.getLogger(__name__)
 EVENT_HANDLER_MAP = {
     "USER_CREATED": [
         send_welcome_email_handler
+    ],
+    "USER_UPDATED": [
+        log_user_updated_handler
+    ],
+    "COUNTRY_CREATED": [
+        log_country_created_handler
     ]
 }
 
@@ -29,11 +48,20 @@ MAX_RETRIES = 5
 # =========================================================
 
 def rebuild_event(event_name: str, data: dict):
-
-    if event_name == "USER_CREATED":
-        return UserCreatedEvent(**data)
-
-    raise ValueError(f"Unknown event: {event_name}")
+    """
+    Rebuild event using the event factory pattern.
+    
+    This function replaces the monolithic if-else structure with a clean,
+    extensible factory pattern that can handle any registered event type.
+    """
+    try:
+        return event_factory.create_event(event_name, data)
+    except ValueError as e:
+        logger.error(f"Failed to rebuild event {event_name}: {e}")
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error rebuilding event {event_name}: {e}")
+        raise
 
 
 # =========================================================
@@ -68,6 +96,36 @@ async def process_event(payload: dict):
                 f"Handler failed: {handler.__name__}"
             )
             raise e
+    
+    # Mark event as processed in database
+    await mark_event_processed(data.get("id"))
+
+
+# =========================================================
+# MARK EVENT PROCESSED
+# =========================================================
+
+async def mark_event_processed(event_id: str):
+    """Mark event as processed in the database"""
+    if not event_id:
+        logger.warning("No event ID provided for marking as processed")
+        return
+    
+    try:
+        db = get_database()
+        outbox_repo = OutboxRepository(db)
+        
+        # Convert string ID to ObjectId if needed
+        try:
+            object_id = ObjectId(event_id)
+        except:
+            object_id = event_id
+        
+        await outbox_repo.mark_processed(object_id)
+        logger.info(f"Event {event_id} marked as processed")
+        
+    except Exception as e:
+        logger.exception(f"Failed to mark event {event_id} as processed: {e}")
 
 
 # =========================================================

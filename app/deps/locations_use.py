@@ -5,7 +5,7 @@ from app.deps.auth import get_current_user
 
 from app.application.use_cases.locations.create_city import CreateCityUseCase
 
-from app.application.use_cases.locations.country import CreateCountryUseCase
+from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountryUseCase, GetCountriesUseCase, UpdateCountryUseCase    
 
 
 def get_create_city_use_case(
@@ -21,3 +21,28 @@ def get_create_country_use_case(
     uow=Depends(get_uow),
 ):
     return CreateCountryUseCase(service, current_user, uow)
+
+
+def get_single_country_use_case(
+    service=Depends(get_location_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow),
+):
+    return GetCountryUseCase(service, current_user, uow)
+
+
+def get_list_countries_use_case(
+    service=Depends(get_location_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow),
+):
+    return GetCountriesUseCase(service, current_user, uow)
+
+
+def get_update_country_use_case(
+    service=Depends(get_location_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow),
+):
+    return UpdateCountryUseCase(service, current_user, uow)
+

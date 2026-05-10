@@ -10,6 +10,8 @@ from app.core.redis import connect_to_redis, close_redis_connection
 from app.core.exceptions import AppException
 from app.api.router import api_router
 from app.infrastructure.event_bus.worker import worker_loop
+from app.infrastructure.event_bus.outbox_publisher import OutboxPublisher, outbox_loop
+from app.repositories.outbox_repository import OutboxRepository
 import asyncio
 
 class Application:
@@ -38,8 +40,14 @@ class Application:
             await connect_to_redis()
             logger.info("Redis connected")
 
-            # 🔥 START WORKER (DEV ONLY)
+            # 🔥 START WORKER AND OUTBOX PUBLISHER (DEV ONLY)
             worker_task = asyncio.create_task(worker_loop())
+            
+            # Create and start outbox publisher
+            db = get_database()
+            outbox_repo = OutboxRepository(db)
+            outbox_publisher = OutboxPublisher(outbox_repo)
+            outbox_task = asyncio.create_task(outbox_loop(outbox_publisher))
 
             # indexes
             try:
@@ -55,9 +63,11 @@ class Application:
 
         yield
 
-        # 🔥 STOP WORKER
+        # 🔥 STOP WORKER AND OUTBOX PUBLISHER
         if worker_task:
             worker_task.cancel()
+        if 'outbox_task' in locals():
+            outbox_task.cancel()
 
         try:
             await close_redis_connection()

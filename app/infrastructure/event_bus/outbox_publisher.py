@@ -30,7 +30,13 @@ class OutboxPublisher:
 
                 payload = {
                     "event": event["event_type"],
-                    "data": event["payload"]
+                    "data": {
+                        "id": str(event["_id"]),
+                        "aggregate_id": event["aggregate_id"],
+                        "event_type": event["event_type"],
+                        "payload": event["payload"],
+                        "created_at": event["created_at"]
+                    }
                 }
 
                 # -----------------------------------------

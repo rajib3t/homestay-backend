@@ -3,6 +3,7 @@ from app.repositories.base_repository import BaseRepository
 from app.repositories.builders.country_query_builder import CountryQueryBuilder
 from app.repositories.builders.country_pipeline_builder import CountryPipelineBuilder
 from app.serializers.country_serializer import CountrySerializer
+from pymongo.errors import DuplicateKeyError
 
 class LocationRepository(BaseRepository):
     @property
@@ -17,24 +18,82 @@ class LocationRepository(BaseRepository):
     def locations(self):
         return self.db.locations
 
-    async def find_country_by_id(self, country_id, session=None):
-        return await self.countries.find_one({"_id": self.to_object_id(country_id)}, session=session)
+    async def find_country_by_id(
+        self,
+        country_id,
+        session=None,
+    ):
+        return await self.countries.find_one(
+            {"_id": self.to_object_id(country_id)},
+            session=session,
+        )
 
-    async def find_country_conflict(self, name: str, code: str, exclude_id=None, session=None):
-        query = {"$or": [{"name": name}, {"code": code}]}
-        if exclude_id is not None:
-            query["_id"] = {"$ne": self.to_object_id(exclude_id)}
-        return await self.countries.find_one(query, {"name": 1, "code": 1}, session=session)
+    async def find_country_conflict(
+        self,
+        name: str,
+        code: str,
+        exclude_id=None,
+        session=None,
+    ):
+
+        query = {
+            "$or": [
+                {"name": name},
+                {"code": code},
+            ]
+        }
+
+        if exclude_id:
+            query["_id"] = {
+                "$ne": self.to_object_id(exclude_id)
+            }
+
+        return await self.countries.find_one(
+            query,
+            {
+                "name": 1,
+                "code": 1,
+            },
+            session=session,
+        )
 
     async def insert_country(self, country_data: dict, session=None):
         return await self.countries.insert_one(country_data, session=session)
 
-    async def update_country(self, country_id, update_data: dict, session=None):
-        return await self.countries.update_one(
-            {"_id": self.to_object_id(country_id)},
-            {"$set": update_data},
-            session=session
-        )
+    async def update_country(
+        self,
+        country_id,
+        update_data: dict,
+        session=None,
+    ):
+
+        try:
+
+            await self.countries.update_one(
+                {"_id": self.to_object_id(country_id)},
+                {"$set": update_data},
+                session=session,
+            )
+
+        except DuplicateKeyError as e:
+
+            if "name" in str(e):
+                raise AppException(
+                    status_code=409,
+                    message="Country with this name already exists",
+                    error_code="COUNTRY_NAME_EXISTS",
+                    field="name",
+                )
+
+            if "code" in str(e):
+                raise AppException(
+                    status_code=409,
+                    message="Country with this code already exists",
+                    error_code="COUNTRY_CODE_EXISTS",
+                    field="code",
+                )
+
+            raise
 
     def aggregate_countries(self, pipeline, session=None):
         return self.countries.aggregate(pipeline, session=session)

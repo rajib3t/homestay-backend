@@ -10,7 +10,7 @@ class CountrySerializer:
 
         return {
 
-            "_id": str(country["_id"]),
+            "id": str(country["_id"]),
 
             "name": country.get("name"),
 
@@ -24,7 +24,7 @@ class CountrySerializer:
 
             "cities": [
                 {
-                    "_id": str(city["_id"]),
+                    "id": str(city["_id"]),
                     "name": city.get("name"),
                     "country": str(city.get("country")),
                     "created_at": city.get("created_at"),

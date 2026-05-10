@@ -1,6 +1,6 @@
 from app.application.dto.country_query import CountryQuery
 from app.core.exceptions import AppException
-from app.domain.events.country_event import CountryCreatedEvent
+from app.domain.events.country_event import CountryCreatedEvent, CountryUpdatedEvent
 from app.application.use_cases.base_use_case import BaseUseCase
 
 class CreateCountryUseCase(BaseUseCase):
@@ -99,7 +99,7 @@ class UpdateCountryUseCase(BaseUseCase):
             country = await self.location_service.update_country(
                 country_id, payload, session=session
             )
-
+            uow.collect_event(CountryUpdatedEvent(country_id, self.current_user.id))
         return await self.build_response(country)   
     
 

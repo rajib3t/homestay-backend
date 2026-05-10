@@ -75,91 +75,129 @@ class LocationService(BaseService):
 
             raise
     
-    async def update_country(self, country_id: str, update_data: dict):
+    async def update_country(
+        self,
+        country_id: str,
+        payload: dict,
+        session=None,
+    ):
 
-        # Validate ObjectId
-        if not ObjectId.is_valid(country_id):
-            raise AppException(
-                status_code=400,
-                message="Invalid country id",
-                error_code="INVALID_COUNTRY_ID",
-                field="country"
-            )
+        country_id = self._validate_country_id(country_id)
 
-        country_obj_id = ObjectId(country_id)
+        existing = await self.repository.find_country_by_id(
+            country_id,
+            session=session,
+        )
 
-        # Normalize values
-        if "name" in update_data:
-            update_data["name"] = update_data["name"].strip()
-
-        if "code" in update_data:
-            update_data["code"] = update_data["code"].upper().strip()
-
-        # Check if country exists
-        existing = await self.repository.find_country_by_id(country_obj_id)
         if not existing:
             raise AppException(
                 status_code=404,
                 message="Country not found",
                 error_code="COUNTRY_NOT_FOUND",
-                field="country"
+                field="country",
             )
 
-        # Check uniqueness (exclude current country)
-        conditions = []
-        if "name" in update_data and update_data["name"] != existing.get("name"):
-            conditions.append({"name": update_data["name"]})
+        normalized_payload = self._normalize_country_payload(payload)
 
-        if "code" in update_data and update_data["code"] != existing.get("code"):
-            conditions.append({"code": update_data["code"]})
+        await self._ensure_country_unique(
+            existing=existing,
+            payload=normalized_payload,
+            country_id=country_id,
+            session=session,
+        )
 
-        if conditions:
-            duplicate = await self.repository.find_country_conflict(
-                update_data.get("name", existing.get("name")),
-                update_data.get("code", existing.get("code")),
-                exclude_id=country_obj_id,
+        self.timestamps(normalized_payload)
+
+        await self.repository.update_country(
+            country_id=country_id,
+            update_data=normalized_payload,
+            session=session,
+        )
+
+        updated_country = await self.repository.find_country_by_id(
+            country_id,
+            session=session,
+        )
+
+        # Convert ObjectId to string for API response
+        if updated_country:
+            updated_country["id"] = str(updated_country.pop("_id"))
+
+        return updated_country
+
+    def _validate_country_id(self, country_id: str):
+
+        if not ObjectId.is_valid(country_id):
+            raise AppException(
+                status_code=400,
+                message="Invalid country id",
+                error_code="INVALID_COUNTRY_ID",
+                field="country",
             )
 
-            if duplicate:
-                if duplicate.get("name") == update_data.get("name"):
-                    raise AppException(
-                        status_code=409,
-                        message="Country with this name already exists",
-                        error_code="COUNTRY_NAME_EXISTS",
-                        field="name"
-                    )
+        return ObjectId(country_id)
 
-                if duplicate.get("code") == update_data.get("code"):
-                    raise AppException(
-                        status_code=409,
-                        message="Country with this code already exists",
-                        error_code="COUNTRY_CODE_EXISTS",
-                        field="code"
-                    )
+    def _normalize_country_payload(
+        self,
+        payload: dict,
+    ):
 
-        try:
-            self.timestamps(update_data)
-            await self.repository.update_country(country_obj_id, update_data)
-            return True
+        normalized = payload.copy()
 
-        except DuplicateKeyError as e:
-            if "name" in str(e):
-                raise AppException(
-                    status_code=409,
-                    message="Country with this name already exists",
-                    error_code="COUNTRY_NAME_EXISTS",
-                    field="name"
-                )
+        if "name" in normalized:
+            normalized["name"] = normalized["name"].strip()
 
-            if "code" in str(e):
-                raise AppException(
-                    status_code=409,
-                    message="Country with this code already exists",
-                    error_code="COUNTRY_CODE_EXISTS",
-                    field="code"
-                )
+        if "code" in normalized:
+            normalized["code"] = normalized["code"].strip().upper()
 
-            raise
+        return normalized
+
+    async def _ensure_country_unique(
+        self,
+        existing: dict,
+        payload: dict,
+        country_id,
+        session=None,
+    ):
+
+        name_changed = (
+            "name" in payload
+            and payload["name"] != existing.get("name")
+        )
+
+        code_changed = (
+            "code" in payload
+            and payload["code"] != existing.get("code")
+        )
+
+        if not name_changed and not code_changed:
+            return
+
+        duplicate = await self.repository.find_country_conflict(
+            name=payload.get("name", existing.get("name")),
+            code=payload.get("code", existing.get("code")),
+            exclude_id=country_id,
+            session=session,
+        )
+
+        if not duplicate:
+            return
+
+        if duplicate.get("name") == payload.get("name"):
+            raise AppException(
+                status_code=409,
+                message="Country with this name already exists",
+                error_code="COUNTRY_NAME_EXISTS",
+                field="name",
+            )
+
+        if duplicate.get("code") == payload.get("code"):
+            raise AppException(
+                status_code=409,
+                message="Country with this code already exists",
+                error_code="COUNTRY_CODE_EXISTS",
+                field="code",
+            )
     
     async def toggle_country_status(self, country_id: str):
         # validate ObjectId format first
@@ -201,7 +239,7 @@ class LocationService(BaseService):
         doc = await self.repository.find_country_by_id(country_id)
         if not doc:
             raise AppException(status_code=404, message="Country not found", error_code="COUNTRY_NOT_FOUND", field="country")
-        doc["_id"] = str(doc["_id"])
+        doc["id"] = str(doc.pop("_id"))
         # Ensure dial_code field exists for backward compatibility
         if "dial_code" not in doc:
             doc["dial_code"] = 1
@@ -382,7 +420,7 @@ class LocationService(BaseService):
         cursor = self.repository.find_cities(query)
         items = []
         async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
+            doc["id"] = str(doc.pop("_id"))
             if "country" in doc and not isinstance(doc["country"], str):
                 doc["country"] = str(doc["country"])
             items.append(doc)
@@ -398,7 +436,7 @@ class LocationService(BaseService):
         if not doc:
             raise AppException(status_code=404, message="City not found", error_code="CITY_NOT_FOUND", field="city")
         # convert ObjectId to string for API responses
-        doc["_id"] = str(doc["_id"])
+        doc["id"] = str(doc.pop("_id"))
         if "country" in doc and not isinstance(doc["country"], str):
             doc["country"] = str(doc["country"])
         if storage and "image" in doc:
@@ -514,10 +552,10 @@ class LocationService(BaseService):
 
         items = []
         async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
+            doc["id"] = str(doc.pop("_id"))
 
             for loc in doc.get("locations", []):
-                loc["_id"] = str(loc["_id"])
+                loc["id"] = str(loc.pop("_id"))
 
                 if "city" in loc and loc["city"]:
                     loc["city"] = str(loc["city"])
@@ -587,7 +625,7 @@ class LocationService(BaseService):
         if not doc:
             raise HTTPException(status_code=404, detail="Location not found")
         # convert ObjectId to string for API responses
-        doc["_id"] = str(doc["_id"])  # ensure _id is a string for Pydantic validation
+        doc["id"] = str(doc.pop("_id"))  # ensure _id is a string for Pydantic validation
         # also normalize related object ids to strings
         if "country" in doc and not isinstance(doc["country"], str):
             doc["country"] = str(doc["country"])
@@ -699,7 +737,7 @@ class LocationService(BaseService):
 
         items = []
         async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
+            doc["id"] = str(doc.pop("_id"))
             items.append(doc)
 
         total = await self.repository.count_locations(query)

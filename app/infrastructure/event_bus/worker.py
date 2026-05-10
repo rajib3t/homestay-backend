@@ -11,7 +11,7 @@ from bson import ObjectId
 
 from app.domain.events.event_factory import event_factory
 from app.infrastructure.email.user_handlers import send_welcome_email_handler
-from app.infrastructure.handlers.country_handlers import log_country_created_handler   
+from app.infrastructure.handlers.country_handlers import log_country_created_handler, log_country_updated_handler   
 from app.infrastructure.handlers.user_handlers import log_user_updated_handler
  
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ EVENT_HANDLER_MAP = {
     ],
     "COUNTRY_CREATED": [
         log_country_created_handler
+    ],
+    "COUNTRY_UPDATED": [
+        log_country_updated_handler
     ]
 }
 

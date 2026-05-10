@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 
 from app.application.dto.country_query import CountryQuery
 from app.application.use_cases.locations.create_city import CreateCityUseCase
-from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountriesUseCase, GetCountryUseCase
+from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountriesUseCase, GetCountryUseCase, UpdateCountryUseCase
 from app.deps import get_location_service, get_storage_service, get_current_user
 from app.deps.auth import CurrentUser
 from app.deps.use_cases import get_create_city_use_case
-from app.deps.locations_use import get_create_country_use_case, get_list_countries_use_case, get_single_country_use_case
+from app.deps.locations_use import get_create_country_use_case, get_list_countries_use_case, get_single_country_use_case, get_update_country_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.models.attribute_model import CreateAmenity
 from app.services.location_service import LocationService
@@ -108,13 +108,12 @@ class LocationController(BaseController):
         self,
         country_id: str,
         data: CountryUpdate,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: UpdateCountryUseCase = Depends(get_update_country_use_case),
     ):
-        updated = await service.update_country(country_id, data.model_dump())
-        if not updated:
+        country = await use_case.execute(country_id, data.model_dump())
+        if not country:
             raise HTTPException(status_code=404, detail="Country not found")
-        country = await service.get_country(country_id)
+        
         return self.build_response("Country updated successfully", country)
 
     @handle_api_exceptions

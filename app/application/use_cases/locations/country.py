@@ -112,3 +112,39 @@ class UpdateCountryUseCase(BaseUseCase):
         return country
 
 
+
+# use_cases/update_country_status.py
+
+class UpdateCountryStatusUseCase(BaseUseCase):
+
+    def __init__(self, location_service, current_user, uow):
+        self.location_service = location_service
+        self.current_user = current_user
+        self.uow = uow
+
+    async def execute(self, country_id: str):
+
+        async with self.uow as uow:
+
+            country = await self.location_service.toggle_country_status(
+                country_id=country_id,
+                updated_by=self.current_user.id,
+                session=uow.get_session(),
+            )
+
+            uow.collect_event(
+                CountryUpdatedEvent(
+                    country["id"],
+                    self.current_user.id
+                )
+            )
+
+            return await self.build_response(country)
+
+
+    async def build_response(self, country):
+        
+        if not country:
+            raise AppException(404, "Country not found")
+
+        return country

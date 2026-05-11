@@ -5,7 +5,7 @@ from app.application.use_cases.auth.refresh_token import RefreshTokenUseCase
 from app.application.use_cases.users.get_user import GetUserUseCase
 from app.application.use_cases.users.create_user import CreateUserUseCase
 from app.application.use_cases.users.update_user import UpdateUserUseCase
-from app.application.use_cases.locations.create_city import CreateCityUseCase
+from app.application.use_cases.locations.city import CreateCityUseCase
 from app.deps.services import get_location_service, get_storage_service
 from app.deps.services import (
     get_token_service,

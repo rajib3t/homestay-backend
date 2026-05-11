@@ -13,7 +13,7 @@ from app.infrastructure.event_bus.worker import worker_loop
 from app.infrastructure.event_bus.outbox_publisher import OutboxPublisher, outbox_loop
 from app.repositories.outbox_repository import OutboxRepository
 import asyncio
-
+from app.core.config import settings  # however you expose settings
 class Application:
     def __init__(self) -> None:
         self.app = FastAPI(lifespan=self._lifespan)
@@ -30,8 +30,7 @@ class Application:
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
         logger = logging.getLogger(__name__)
-
-        worker_task = None
+        tasks: list[asyncio.Task] = []  # single collection — cancel all in one place
 
         try:
             await connect_to_mongo()
@@ -40,34 +39,40 @@ class Application:
             await connect_to_redis()
             logger.info("Redis connected")
 
-            # 🔥 START WORKER AND OUTBOX PUBLISHER (DEV ONLY)
-            worker_task = asyncio.create_task(worker_loop())
-            
-            # Create and start outbox publisher
             db = get_database()
-            outbox_repo = OutboxRepository(db)
-            outbox_publisher = OutboxPublisher(outbox_repo)
-            outbox_task = asyncio.create_task(outbox_loop(outbox_publisher))
 
-            # indexes
+            # Create indexes — do this before starting background tasks
             try:
-                db = get_database()
                 from app.core.create_indexes import IndexCreator
                 await IndexCreator.ensure_indexes(db)
             except Exception:
                 logger.exception("Index creation failed")
 
+            # Start background tasks — all tracked in one list
+            outbox_repo = OutboxRepository(db)
+            outbox_publisher = OutboxPublisher(outbox_repo)
+            
+
+            if settings.ENV == "development":
+                tasks.append(asyncio.create_task(worker_loop(), name="worker_loop"))
+                tasks.append(asyncio.create_task(outbox_loop(outbox_publisher), name="outbox_loop"))
+                logger.info("Background tasks started (dev mode)")
+            else:
+                logger.info("Background tasks skipped — use run_worker.py in production")
+
         except Exception:
             logger.exception("Startup failure")
             raise
 
-        yield
+        yield  # App runs here
 
-        # 🔥 STOP WORKER AND OUTBOX PUBLISHER
-        if worker_task:
-            worker_task.cancel()
-        if 'outbox_task' in locals():
-            outbox_task.cancel()
+        # Shutdown — cancel and await every task, even if startup only partially succeeded
+        for task in tasks:
+            task.cancel()
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info("Background tasks stopped")
 
         try:
             await close_redis_connection()

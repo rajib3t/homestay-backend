@@ -199,26 +199,57 @@ class LocationService(BaseService):
                 field="code",
             )
     
-    async def toggle_country_status(self, country_id: str):
-        # validate ObjectId format first
+    async def toggle_country_status(
+        self,
+        country_id: str,
+        updated_by: str,
+        session=None,
+    ):
+
         if not ObjectId.is_valid(country_id):
-            raise AppException(400, "Invalid country id")
-
-        existing = await self.repository.find_country_by_id(country_id)
-        if not existing:
             raise AppException(
-                    status_code=404,
-                    message="Country not found",
-                    error_code="COUNTRY_NOT_FOUND",
-                    field="country"
-                )
+                status_code=400,
+                message="Invalid country id",
+                error_code="INVALID_COUNTRY_ID",
+                field="country_id",
+            )
 
-        # Toggle the status
-        new_status = not existing.get("status", True)
-        update_data = {"status": new_status}
-        self.timestamps(update_data)
-        await self.repository.update_country(country_id, update_data)
-        return True
+        country = await self.repository.find_country_by_id(
+            country_id,
+            session=session,
+        )
+
+        if not country:
+            raise AppException(
+                status_code=404,
+                message="Country not found",
+                error_code="COUNTRY_NOT_FOUND",
+                field="country",
+            )
+
+        updated_data = {
+            "status": not country.get("status", True),
+            "updated_by": updated_by,
+        }
+
+        self.timestamps(updated_data)
+
+        await self.repository.update_country(
+            country_id=country_id,
+            update_data=updated_data,
+            session=session,
+        )
+
+        updated_country = await self.repository.find_country_by_id(
+            country_id,
+            session=session,
+        )
+
+        # Convert ObjectId to string for API response
+        if updated_country:
+            updated_country["id"] = str(updated_country.pop("_id"))
+
+        return updated_country
 
     async def list_countries(
         self,

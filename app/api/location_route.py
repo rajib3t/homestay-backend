@@ -3,13 +3,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
+from app.application.dto.city_query import CityQuery
 from app.application.dto.country_query import CountryQuery
-from app.application.use_cases.locations.city import CreateCityUseCase
+from app.application.use_cases.locations.city import CreateCityUseCase, GetCitiesUseCase, GetCityUseCase
 from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountriesUseCase, GetCountryUseCase, UpdateCountryStatusUseCase, UpdateCountryUseCase
 from app.deps import get_location_service, get_storage_service, get_current_user
 from app.deps.auth import CurrentUser
 from app.deps.use_cases import get_create_city_use_case
-from app.deps.locations_use import get_create_country_use_case, get_list_countries_use_case, get_single_country_use_case, get_update_country_status_use_case, get_update_country_use_case
+from app.deps.locations_use import get_create_country_use_case, get_list_cities_use_case, get_list_countries_use_case, get_single_city_use_case, get_single_country_use_case, get_update_country_status_use_case, get_update_country_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.models.attribute_model import CreateAmenity
 from app.services.location_service import LocationService
@@ -179,30 +180,26 @@ class LocationController(BaseController):
     async def list_cities(
         self,
         params: CityList = Depends(),
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: GetCitiesUseCase = Depends(get_list_cities_use_case),
     ):
         search = self.build_search(name=params.name, country=params.country, is_popular=params.is_popular)
-        result = await service.list_cities(
+        query = CityQuery(
             page=params.page,
             size=params.size,
             sort_by=params.sort_by,
             sort_order=params.sort_order,
-            search=search,
-            storage=storage_service,
+            filters=search
         )
+        result = await use_case.execute(query)
         return self.build_response("Cities retrieved successfully", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_city(
         self,
         city_id: str,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: GetCityUseCase = Depends(get_single_city_use_case),
     ):
-        city = await service.get_city(city_id, storage=storage_service)
+        city = await use_case.execute(city_id)
         if not city:
             raise HTTPException(status_code=404, detail="City not found")
         return self.build_response("City retrieved successfully", city)

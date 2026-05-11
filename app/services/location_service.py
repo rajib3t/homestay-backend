@@ -1,6 +1,7 @@
 from starlette.exceptions import HTTPException
 import logging
 
+from app.application.dto.city_query import CityQuery
 from app.application.dto.country_query import CountryQuery
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
@@ -458,158 +459,53 @@ class LocationService(BaseService):
 
         return items
 
-    async def get_city(self, city_id: str, storage: Optional[StorageService] = None):
-        # validate ObjectId format first
-        if not ObjectId.is_valid(city_id):
-            raise AppException(status_code=400, message="Invalid city id", error_code="INVALID_CITY_ID", field="city")
-
-        doc = await self.repository.find_city_by_id(city_id)
-        if not doc:
-            raise AppException(status_code=404, message="City not found", error_code="CITY_NOT_FOUND", field="city")
-        # convert ObjectId to string for API responses
-        doc["id"] = str(doc.pop("_id"))
-        if "country" in doc and not isinstance(doc["country"], str):
-            doc["country"] = str(doc["country"])
-        if storage and "image" in doc:
-            try:
-                doc["image"] = storage.generate_presigned_url(doc["image"])
-            except Exception:
-                pass
-        return doc
-    async def list_cities(
+    async def get_city(
         self,
-        page: int = 1,
-        size: int = 10,
-        sort_by: str = "created_at",
-        sort_order: str = "desc",
-        search: dict = None,
-        storage: Optional[StorageService] = None
+        city_id: str,
+        session=None,
     ):
 
-        try:
-            page = int(page)
-            size = int(size)
-        except Exception:
+        if not ObjectId.is_valid(city_id):
             raise AppException(
                 status_code=400,
-                message="Invalid pagination parameters",
-                error_code="INVALID_PAGINATION_PARAMETERS",
-                field="pagination"
+                message="Invalid city id",
+                error_code="INVALID_CITY_ID",
+                field="city",
             )
 
-        if page < 1 or size < 1:
+        doc = await self.repository.find_city_by_id(
+            city_id,
+            session=session,
+        )
+
+        if not doc:
             raise AppException(
-                status_code=400,
-                message="page and size must be positive integers",
-                error_code="INVALID_PAGINATION_VALUES",
-                field="pagination"
+                status_code=404,
+                message="City not found",
+                error_code="CITY_NOT_FOUND",
+                field="city",
             )
 
-        skip = (page - 1) * size
-        sort_direction = 1 if sort_order.lower() == "asc" else -1
+        doc["id"] = str(doc.pop("_id"))
 
-        query = {}
+        if "country" in doc and not isinstance(
+            doc["country"],
+            str,
+        ):
+            doc["country"] = str(doc["country"])
 
-       
-       
+        return doc
+    
+    async def list_cities(
+        self,
+        query: CityQuery,
+        session=None,
+    ):
 
-        # search filter
-        if search:
-            for k, v in search.items():
-
-                if k == "country":
-
-                    if ObjectId.is_valid(v):
-                        query["country"] = ObjectId(v)
-                    else:
-                        countries = await self.repository.find_countries_by_name(v)
-
-                        query["country"] = {"$in": [c["_id"] for c in countries]}
-
-                else:
-                    if isinstance(v, str):
-                        query[k] = {"$regex": v, "$options": "i"}
-                    else:
-                        query[k] = v
-
-        pipeline = [
-
-            {"$match": query},
-
-            {
-                "$lookup": {
-                    "from": "countries",
-                    "localField": "country",
-                    "foreignField": "_id",
-                    "as": "country_doc"
-                }
-            },
-
-            {
-                "$unwind": {
-                    "path": "$country_doc",
-                    "preserveNullAndEmptyArrays": True
-                }
-            },
-
-            {
-                "$lookup": {
-                    "from": "locations",
-                    "localField": "_id",
-                    "foreignField": "city",
-                    "as": "locations"
-                }
-            },
-
-            {
-                "$addFields": {
-                    "country": {"$ifNull": ["$country_doc.name", ""]},
-                    "location_count": {"$size": "$locations"}
-                }
-            },
-
-            {
-                "$project": {
-                    "country_doc": 0
-                }
-            },
-
-            {"$sort": {sort_by: sort_direction}},
-            {"$skip": skip},
-            {"$limit": size}
-        ]
-
-        cursor = self.repository.aggregate_cities(pipeline)
-
-        items = []
-        async for doc in cursor:
-            doc["id"] = str(doc.pop("_id"))
-
-            for loc in doc.get("locations", []):
-                loc["id"] = str(loc.pop("_id"))
-
-                if "city" in loc and loc["city"]:
-                    loc["city"] = str(loc["city"])
-
-                if "country" in loc and loc["country"]:
-                    loc["country"] = str(loc["country"])
-
-            if storage and "image" in doc:
-                try:
-                    doc["image"] = storage.generate_presigned_url(doc["image"])
-                except Exception:
-                    pass
-
-            items.append(doc)
-
-        total = await self.repository.count_cities(query)
-
-        return {
-            "items": items,
-            "total": total,
-            "page": page,
-            "size": size
-        }
+        return await self.repository.list_cities(
+            query=query,
+            session=session,
+        )
     
     async def create_location(self, location_data: dict):
         try:

@@ -1,7 +1,10 @@
 from app.core.exceptions import AppException
 from app.repositories.base_repository import BaseRepository
+from app.repositories.builders.city_pipeline_builder import CityPipelineBuilder
+from app.repositories.builders.city_query_builder import CityQueryBuilder
 from app.repositories.builders.country_query_builder import CountryQueryBuilder
 from app.repositories.builders.country_pipeline_builder import CountryPipelineBuilder
+from app.serializers.city_serializer import CitySerializer
 from app.serializers.country_serializer import CountrySerializer
 from pymongo.errors import DuplicateKeyError
 
@@ -167,7 +170,55 @@ class LocationRepository(BaseRepository):
     async def count_locations(self, query: dict, session=None):
         return await self.locations.count_documents(query, session=session)
     
+   
 
+    async def list_cities(
+        self,
+        query,
+        session=None,
+    ):
+
+        self._validate_pagination(
+            page=query.page,
+            size=query.size,
+        )
+
+        mongo_query = await CityQueryBuilder.build(
+            filters=query.filters,
+            repository=self,
+        )
+
+        pipeline = CityPipelineBuilder.build(
+            query=mongo_query,
+            page=query.page,
+            size=query.size,
+            sort_by=query.sort_by,
+            sort_order=query.sort_order,
+        )
+
+        cursor = self.aggregate_cities(
+            pipeline,
+            session=session,
+        )
+
+        items = []
+
+        async for doc in cursor:
+            items.append(
+                CitySerializer.serialize(doc)
+            )
+
+        total = await self.count_cities(
+            mongo_query,
+            session=session,
+        )
+
+        return {
+            "items": items,
+            "total": total,
+            "page": query.page,
+            "size": query.size,
+        }
     async def list_countries(
         self,
         query,

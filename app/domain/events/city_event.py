@@ -1,14 +1,11 @@
 from app.domain.events.base_event import BaseEvent
-
 class CityCreatedEvent(BaseEvent):
-    def __init__(self, city_id: str, name: str, country: str, created_by: str):
+    def __init__(self, city_id: str, created_by: str):
         super().__init__(
             aggregate_id=city_id,
             event_type="CITY_CREATED",
             payload={
                 "city_id": city_id,
-                "name": name,
-                "country": country,
                 "created_by": created_by,
             },
         )

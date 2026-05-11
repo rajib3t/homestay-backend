@@ -73,12 +73,7 @@ def get_update_user_use_case(
     )
 
 
-def get_create_city_use_case(
-    service=Depends(get_location_service),
-    storage=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
-):
-    return CreateCityUseCase(service, storage, current_user)
+
 
 def get_update_profile_image_use_case(
     user_service=Depends(get_user_service),

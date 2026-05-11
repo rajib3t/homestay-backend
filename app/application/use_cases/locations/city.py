@@ -5,6 +5,7 @@ import uuid
 from app.application.dto.city_query import CityQuery
 from app.application.use_cases.base_use_case import BaseUseCase
 from app.core.exceptions import AppException
+from app.domain.events.city_event import CityCreatedEvent
 
 logger = logging.getLogger(__name__)
 
@@ -77,24 +78,34 @@ class CreateCityUseCase(BaseUseCase):
         service,
         storage,
         current_user,
+        uow,
     ):
         self.service = service
         self.current_user = current_user
+        
         self.image_service = CityImageService(storage)
+        self.uow = uow
 
     async def execute(self, payload: dict):
 
-        payload["image"] = await self.image_service.upload(
-            image_data=payload.get("image"),
-            country_id=payload.get("country"),
-            city_name=payload.get("name"),
-        )
+        async with self.uow as uow:
+            session = uow.get_session()
+            payload["image"] = await self.image_service.upload(
+                image_data=payload.get("image"),
+                country_id=payload.get("country"),
+                city_name=payload.get("name"),
+            )
 
-        payload["created_by"] = self.current_user.id
+            payload["created_by"] = self.current_user.id
 
-        city_id = await self.service.create_city(payload)
-
-        city = await self.service.get_city(city_id)
+            city_id = await self.service.create_city(payload, session=session)
+            uow.collect_event(
+                CityCreatedEvent(
+                    city_id=city_id,
+                    created_by=self.current_user.id,
+                )
+            )
+            city = await self.service.get_city(city_id, session=session)
 
         return self.build_response(city)
 

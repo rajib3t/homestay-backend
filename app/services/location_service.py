@@ -281,6 +281,7 @@ class LocationService(BaseService):
     async def create_city(
         self,
         city_data: dict,
+        session=None,
     ):
         # Normalize
         city_data["name"] = city_data["name"].strip()
@@ -297,7 +298,7 @@ class LocationService(BaseService):
         country_id = ObjectId(city_data["country"])
 
         # Check country exists
-        country = await self.repository.find_country_by_id(country_id)
+        country = await self.repository.find_country_by_id(country_id, session=session)
         if not country:
             raise AppException(
                 status_code=404,
@@ -308,7 +309,8 @@ class LocationService(BaseService):
 
         # Check duplicate
         existing = await self.repository.find_city_conflict(
-            city_data["name"], country_id
+            city_data["name"], country_id,
+            session=session
         )
 
         if existing:
@@ -324,8 +326,8 @@ class LocationService(BaseService):
         self.timestamps(city_data, is_new=True)
 
         try:
-            result = await self.repository.insert_city(city_data)
-            return result.inserted_id   # return ObjectId (not string)
+            result = await self.repository.insert_city(city_data, session=session)
+            return str(result.inserted_id) # return ObjectId (not string)
         except DuplicateKeyError:
             raise AppException(
                 status_code=409,

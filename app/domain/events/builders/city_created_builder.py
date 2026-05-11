@@ -17,7 +17,5 @@ class CityCreatedEventBuilder(EventBuilder):
         payload = data["payload"]
         return CityCreatedEvent(
             city_id=payload["city_id"],
-            name=payload["name"],
-            country=payload["country"],
             created_by=payload["created_by"]
         )

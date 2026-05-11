@@ -12,8 +12,9 @@ def get_create_city_use_case(
     service=Depends(get_location_service),
     storage=Depends(get_storage_service),
     current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
 ):
-    return CreateCityUseCase(service, storage, current_user)
+    return CreateCityUseCase(service, storage, current_user, uow)
 
 def get_list_cities_use_case(
     service=Depends(get_location_service),

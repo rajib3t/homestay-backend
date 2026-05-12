@@ -1,3 +1,7 @@
+
+
+from uvicorn import logging
+
 from app.core.exceptions import AppException
 from app.repositories.base_repository import BaseRepository
 from app.repositories.builders.city_pipeline_builder import CityPipelineBuilder
@@ -177,7 +181,9 @@ class LocationRepository(BaseRepository):
         query,
         session=None,
     ):
-
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"City query: {query}")
         self._validate_pagination(
             page=query.page,
             size=query.size,

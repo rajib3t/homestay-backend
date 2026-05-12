@@ -34,6 +34,7 @@ class City(BaseModel):
     country: str
     image: Optional[str] = None
     is_popular: bool = False
+    is_active: bool = True
     locations: list[Location] = Field(default_factory=list)
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
@@ -65,6 +66,7 @@ class CityOut(BaseModel):
     country: str
     image: Optional[str] = None
     is_popular: bool = False
+    is_active: bool = True
     location_count: int = 0
     locations: list[LocationOut] = Field(default_factory=list)
     created_at: Optional[datetime.datetime] = None

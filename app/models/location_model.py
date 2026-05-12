@@ -58,6 +58,7 @@ class CityUpdate(BaseModel):
 
     name: Optional[str] = None
     country: Optional[str] = None
+    image: Optional[str] = None
     is_popular: Optional[bool] = None
     is_active: Optional[bool] = None
 

@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from copy import deepcopy
 
 from app.application.dto.city_query import CityQuery
 from app.application.use_cases.base_use_case import BaseUseCase
@@ -25,7 +26,7 @@ class CityImageService:
         if not image_data or not self.storage:
             return None
 
-        image_bytes, mime_type = (
+        image_bytes, _ = (
             await self.storage.convert_base64_to_bytes(
                 image_data
             )
@@ -51,6 +52,24 @@ class CityImageService:
 
         return key
 
+    async def delete(self, image_key: str):
+
+        if not image_key or not self.storage:
+            return
+
+        try:
+
+            await self.storage.delete_file(
+                image_key
+            )
+
+        except Exception as e:
+
+            logger.error(
+                f"Error deleting image "
+                f"{image_key}: {e}"
+            )
+
     def resolve_url(self, image_key: str):
 
         if not image_key or not self.storage:
@@ -58,17 +77,58 @@ class CityImageService:
 
         try:
 
-            return self.storage.generate_presigned_url(
-                image_key
+            return (
+                self.storage.generate_presigned_url(
+                    image_key
+                )
             )
 
         except Exception as e:
 
             logger.error(
-                f"Error generating presigned URL: {e}"
+                f"Error generating "
+                f"presigned URL: {e}"
             )
 
             return None
+
+
+class CityResponseBuilder:
+
+    def __init__(self, image_service):
+        self.image_service = image_service
+
+    def city(self, city: dict):
+
+        if not city:
+            return city
+
+        result = deepcopy(city)
+
+        if result.get("image"):
+
+            result["image"] = (
+                self.image_service.resolve_url(
+                    result["image"]
+                )
+            )
+
+        return result
+
+    def cities(self, result: dict):
+
+        if not result:
+            return result
+
+        items = result.get("items", [])
+
+        return {
+            **result,
+            "items": [
+                self.city(city)
+                for city in items
+            ]
+        }
 
 
 class CreateCityUseCase(BaseUseCase):
@@ -82,44 +142,74 @@ class CreateCityUseCase(BaseUseCase):
     ):
         self.service = service
         self.current_user = current_user
-        
-        self.image_service = CityImageService(storage)
         self.uow = uow
+
+        image_service = CityImageService(storage)
+
+        self.image_service = image_service
+        self.response_builder = (
+            CityResponseBuilder(
+                image_service
+            )
+        )
 
     async def execute(self, payload: dict):
 
+        create_payload = {
+            **payload,
+            "created_by": (
+                self.current_user.id
+            ),
+        }
+
+        image_key = (
+            await self.image_service.upload(
+                image_data=payload.get(
+                    "image"
+                ),
+                country_id=payload.get(
+                    "country"
+                ),
+                city_name=payload.get(
+                    "name"
+                ),
+            )
+        )
+
+        create_payload["image"] = image_key
+
         async with self.uow as uow:
+
             session = uow.get_session()
-            payload["image"] = await self.image_service.upload(
-                image_data=payload.get("image"),
-                country_id=payload.get("country"),
-                city_name=payload.get("name"),
+
+            city_id = (
+                await self.service.create_city(
+                    create_payload,
+                    session=session,
+                )
             )
 
-            payload["created_by"] = self.current_user.id
-
-            city_id = await self.service.create_city(payload, session=session)
             uow.collect_event(
                 CityCreatedEvent(
                     city_id=city_id,
-                    created_by=self.current_user.id,
-                )
-            )
-            city = await self.service.get_city(city_id, session=session)
-
-        return self.build_response(city)
-
-    def build_response(self, city):
-
-        if city.get("image"):
-
-            city["image"] = (
-                self.image_service.resolve_url(
-                    city["image"]
+                    created_by=(
+                        self.current_user.id
+                    ),
                 )
             )
 
-        return city
+            city = (
+                await self.service.get_city(
+                    city_id,
+                    session=session,
+                )
+            )
+
+        return (
+            self.response_builder.city(
+                city
+            )
+        )
 
 
 class GetCitiesUseCase(BaseUseCase):
@@ -134,76 +224,199 @@ class GetCitiesUseCase(BaseUseCase):
         self.service = service
         self.current_user = current_user
         self.uow = uow
-        self.image_service = CityImageService(storage)
 
-    async def execute(self, query: CityQuery):
+        image_service = CityImageService(
+            storage
+        )
+
+        self.image_service = image_service
+        self.response_builder = (
+            CityResponseBuilder(
+                image_service
+            )
+        )
+
+    async def execute(
+        self,
+        query: CityQuery,
+    ):
 
         async with self.uow as uow:
 
             session = uow.get_session()
 
-            result = await self.service.list_cities(
-                query=query,
-                session=session,
-            )
-
-            return self.build_response(result)
-
-    def build_response(self, result):
-
-        if not result or not result.get("items"):
-            return result
-
-        items = [
-            self.serialize_city(city)
-            for city in result["items"]
-        ]
-
-        return {
-            **result,
-            "items": items,
-        }
-
-    def serialize_city(self, city):
-
-        if city.get("image"):
-
-            city["image"] = (
-                self.image_service.resolve_url(
-                    city["image"]
+            result = (
+                await self.service.list_cities(
+                    query=query,
+                    session=session,
                 )
             )
 
-        return city
+        return (
+            self.response_builder.cities(
+                result
+            )
+        )
+
 
 class GetCityUseCase(BaseUseCase):
 
-    def __init__(self, location_service, storage, current_user, uow):
-        self.location_service = location_service
-        self.storage = CityImageService(storage)
+    def __init__(
+        self,
+        service,
+        storage,
+        current_user,
+        uow,
+    ):
+        self.service = service
         self.current_user = current_user
         self.uow = uow
-    
-    async def execute(self, city_id: str) : 
-        
+
+        image_service = CityImageService(
+            storage
+        )
+
+        self.image_service = image_service
+        self.response_builder = (
+            CityResponseBuilder(
+                image_service
+            )
+        )
+
+    async def execute(
+        self,
+        city_id: str,
+    ):
+
         async with self.uow as uow:
+
             session = uow.get_session()
 
-            city = await self.location_service.get_city(city_id, session=session)
-
-        if not city:
-            raise AppException(404, "City not found")
-
-        return self.build_response(city)
-    
-    def build_response(self, city):
-
-        if city.get("image"):
-
-            city["image"] = (
-                self.storage.resolve_url(
-                    city["image"]
+            city = (
+                await self.service.get_city(
+                    city_id,
+                    session=session,
                 )
             )
 
-        return city 
+        if not city:
+            raise AppException(
+                404,
+                "City not found",
+            )
+
+        return (
+            self.response_builder.city(
+                city
+            )
+        )
+
+
+class UpdateCityUseCase(BaseUseCase):
+
+    def __init__(
+        self,
+        service,
+        storage,
+        current_user,
+        uow,
+    ):
+        self.service = service
+        self.current_user = current_user
+        self.uow = uow
+
+        image_service = CityImageService(storage)
+
+        self.image_service = image_service
+
+        self.response_builder = (
+            CityResponseBuilder(
+                image_service
+            )
+        )
+
+    async def execute(
+        self,
+        city_id: str,
+        payload: dict,
+    ):
+
+        async with self.uow as uow:
+
+            session = uow.get_session()
+
+            existing_city = (
+                await self.service.get_raw_city(
+                    city_id=city_id,
+                    session=session,
+                )
+            )
+
+            update_payload = (
+                await self._prepare_payload(
+                    payload=payload,
+                    existing_city=existing_city,
+                )
+            )
+
+            updated_city = (
+                await self.service.update_city(
+                    city_id=city_id,
+                    payload=update_payload,
+                    session=session,
+                )
+            )
+
+        await self._delete_old_image(
+            old_image=existing_city.get("image"),
+            new_image=update_payload.get("image"),  # None if unchanged → guard skips delete
+        )
+
+        return self.response_builder.city(updated_city)
+
+    async def _prepare_payload(
+        self,
+        payload: dict,
+        existing_city: dict,
+    ):
+        prepared = {
+            **payload,
+            "updated_by": self.current_user.id,
+        }
+
+        image_data = payload.get("image")
+
+        # No image field sent — client wants to keep existing, don't touch it
+        if not image_data:
+            prepared.pop("image", None)  # ensure image key not in payload at all
+            return prepared
+
+        # Client sent back the existing presigned URL — treat as unchanged
+        if not image_data.startswith("data:image"):
+            prepared.pop("image", None)
+            return prepared
+
+        # Fresh base64 upload — upload and replace
+        image_key = await self.image_service.upload(
+            image_data=image_data,
+            country_id=payload.get("country", existing_city["country"]),
+            city_name=payload.get("name", existing_city["name"]),
+        )
+
+        prepared["image"] = image_key
+        return prepared
+
+    async def _delete_old_image(
+        self,
+        old_image: str,
+        new_image: str,
+    ):
+
+        if (
+            not old_image
+            or not new_image
+            or old_image == new_image
+        ):
+            return
+
+        await self.image_service.delete(old_image)

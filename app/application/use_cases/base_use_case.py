@@ -9,7 +9,7 @@ class BaseUseCase(ABC):
     async def execute(self, *args, **kwargs):
         pass
     
-    @abstractmethod
+    
     async def build_response(self, *args, **kwargs):
         pass
 

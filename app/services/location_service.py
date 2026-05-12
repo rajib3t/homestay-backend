@@ -3,6 +3,7 @@ import logging
 
 from app.application.dto.city_query import CityQuery
 from app.application.dto.country_query import CountryQuery
+from app.serializers.city_serializer import CitySerializer
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from bson import ObjectId
@@ -338,10 +339,58 @@ class LocationService(BaseService):
     async def update_city(
         self,
         city_id: str,
-        update_data: dict,
-        image_bytes: Optional[bytes] = None,
-        content_type: Optional[str] = None,
-        storage: Optional[StorageService] = None
+        payload: dict,
+        session=None,
+    ):
+
+        city_object_id = self._validate_city_id(
+            city_id
+        )
+
+        existing_city = await self._get_existing_city(
+            city_object_id,
+            session=session,
+        )
+
+        normalized_payload = (
+            self._normalize_city_payload(
+                payload=payload,
+                existing_city=existing_city,
+            )
+        )
+
+        await self._validate_country(
+            normalized_payload["country"],
+            session=session,
+        )
+
+        await self._ensure_city_unique(
+            name=normalized_payload["name"],
+            country_id=normalized_payload["country"],
+            city_id=city_object_id,
+            session=session,
+        )
+
+        self.timestamps(normalized_payload)
+
+        await self.repository.update_city(
+            city_id=city_object_id,
+            update_data=normalized_payload,
+            session=session,
+        )
+
+        updated_city = await self.repository.find_city_by_id(
+            city_object_id,
+            session=session,
+        )
+
+        return CitySerializer.serialize(
+            updated_city
+        )
+    
+    def _validate_city_id(
+        self,
+        city_id: str,
     ):
 
         if not ObjectId.is_valid(city_id):
@@ -349,92 +398,134 @@ class LocationService(BaseService):
                 status_code=400,
                 message="Invalid city id",
                 error_code="INVALID_CITY_ID",
-                field="city"
+                field="city",
             )
 
-        city_obj_id = ObjectId(city_id)
+        return ObjectId(city_id)
+    
+    async def _get_existing_city(
+        self,
+        city_id,
+        session=None,
+    ):
 
-        existing = await self.repository.find_city_by_id(city_obj_id)
-        if not existing:
+        city = await self.repository.find_city_by_id(
+            city_id,
+            session=session,
+        )
+
+        if not city:
             raise AppException(
                 status_code=404,
                 message="City not found",
                 error_code="CITY_NOT_FOUND",
-                field="city"
+                field="city",
             )
 
-        name = update_data.get("name", existing["name"]).strip()
-        country_id = update_data.get("country", existing["country"])
+        return city
+    
+    async def _get_existing_city(
+        self,
+        city_id,
+        session=None,
+    ):
+
+        city = await self.repository.find_city_by_id(
+            city_id,
+            session=session,
+        )
+
+        if not city:
+            raise AppException(
+                status_code=404,
+                message="City not found",
+                error_code="CITY_NOT_FOUND",
+                field="city",
+            )
+
+        return city
+    def _normalize_city_payload(
+        self,
+        payload: dict,
+        existing_city: dict,
+    ):
+
+        normalized = payload.copy()
+
+        normalized["name"] = (
+            payload.get(
+                "name",
+                existing_city["name"],
+            )
+            .strip()
+        )
+
+        country_id = payload.get(
+            "country",
+            existing_city["country"],
+        )
 
         if isinstance(country_id, str):
+
             if not ObjectId.is_valid(country_id):
                 raise AppException(
                     status_code=400,
                     message="Invalid country id",
                     error_code="INVALID_COUNTRY_ID",
-                    field="country"
+                    field="country",
                 )
+
             country_id = ObjectId(country_id)
 
-        # Check country exists
-        country = await self.repository.find_country_by_id(country_id)
+        normalized["country"] = country_id
+
+        return normalized
+
+    async def _validate_country(
+        self,
+        country_id,
+        session=None,
+    ):
+
+        country = await self.repository.find_country_by_id(
+            country_id,
+            session=session,
+        )
+
         if not country:
             raise AppException(
                 status_code=404,
                 message="Country not found",
                 error_code="COUNTRY_NOT_FOUND",
-                field="country"
+                field="country",
             )
+        
+    async def _ensure_city_unique(
+        self,
+        name: str,
+        country_id,
+        city_id,
+        session=None,
+    ):
 
-        # Check duplicate city
-        duplicate = await self.repository.find_city_conflict(name, country_id, exclude_id=city_obj_id)
+        duplicate = await self.repository.find_city_conflict(
+            name=name,
+            country_id=country_id,
+            exclude_id=city_id,
+            session=session,
+        )
 
         if duplicate:
             raise AppException(
                 status_code=409,
-                message="City with this name already exists in the specified country",
+                message=(
+                    "City with this name "
+                    "already exists "
+                    "in the specified country"
+                ),
                 error_code="CITY_ALREADY_EXISTS",
-                field="name"
+                field="name",
             )
-
-        # Upload new image
-        if image_bytes and storage:
-
-            old_image = existing.get("image")
-            if old_image:
-                try:
-                    await storage.delete_object(old_image)
-                except Exception as e:
-                    logger.error(f"Failed deleting image: {e}")
-
-            slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-
-            key = f"cities/{country_id}/{slug}-{uuid.uuid4().hex[:8]}.webp"
-
-            # if content_type:
-            #     if "jpeg" in content_type or "jpg" in content_type:
-            #         key += ".jpg"
-            #     elif "png" in content_type:
-            #         key += ".png"
-            #     elif "webp" in content_type:
-            #         key += ".webp"
-
-            # await storage.convert_and_upload_webp(key, image_bytes, 90)
-            await storage.convert_and_upload_webp(
-                key=key, 
-                data=image_bytes, 
-                quality=90, 
-                
-                )
-            update_data["image"] = key
-
-        update_data["name"] = name
-        update_data["country"] = country_id
-        self.timestamps(update_data)
-        await self.repository.update_city(city_obj_id, update_data)
-
-        return True
-
     async def list_cities_by_country(self, country_id: str):
         # validate ObjectId format first
         if not ObjectId.is_valid(country_id):
@@ -461,6 +552,34 @@ class LocationService(BaseService):
 
         return items
 
+    async def get_raw_city(
+        self,
+        city_id: str,
+        session=None,
+    ):
+
+        if not ObjectId.is_valid(city_id):
+            raise AppException(
+                status_code=400,
+                message="Invalid city id",
+                error_code="INVALID_CITY_ID",
+                field="city",
+            )
+
+        city = await self.repository.find_city_by_id(
+            city_id,
+            session=session,
+        )
+
+        if not city:
+            raise AppException(
+                status_code=404,
+                message="City not found",
+                error_code="CITY_NOT_FOUND",
+                field="city",
+            )
+
+        return city
     async def get_city(
         self,
         city_id: str,

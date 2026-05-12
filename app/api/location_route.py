@@ -5,11 +5,23 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 
 from app.application.dto.city_query import CityQuery
 from app.application.dto.country_query import CountryQuery
-from app.application.use_cases.locations.city import CreateCityUseCase, GetCitiesUseCase, GetCityUseCase
+from app.application.use_cases.locations.city import CreateCityUseCase, GetCitiesUseCase, GetCityUseCase, UpdateCityUseCase
 from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountriesUseCase, GetCountryUseCase, UpdateCountryStatusUseCase, UpdateCountryUseCase
 from app.deps import get_location_service, get_storage_service, get_current_user
-from app.deps.auth import CurrentUser
-from app.deps.locations_use import get_create_country_use_case,  get_create_country_use_case,  get_create_country_use_case, get_list_cities_use_case, get_list_countries_use_case, get_single_city_use_case, get_single_country_use_case, get_update_country_status_use_case, get_update_country_use_case, get_create_city_use_case
+
+from app.deps.locations_use import ( 
+    get_create_country_use_case,  
+    get_create_country_use_case,  
+    get_create_country_use_case, 
+    get_list_cities_use_case, 
+    get_list_countries_use_case, 
+    get_single_city_use_case, 
+    get_single_country_use_case, 
+    get_update_city_use_case, 
+    get_update_country_status_use_case, 
+    get_update_country_use_case, 
+    get_create_city_use_case
+)
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.models.attribute_model import CreateAmenity
 from app.services.location_service import LocationService
@@ -17,7 +29,7 @@ from app.services.storage_service import StorageService
 
 
 from app.models.location_model import (
-    CityCreate, CityList,
+    CityCreate, CityList, CityUpdate,
     CountryCreate, CountryUpdate, CountryList,
     LocationCreate, LocationList, LocationUpdate
 )
@@ -207,33 +219,12 @@ class LocationController(BaseController):
     async def update_city(
         self,
         city_id: str,
-        request: Request,
-        city_data: Optional[str] = Form(None),
-        image_file: Optional[UploadFile] = File(None),
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        city_data: CityUpdate ,
+        use_case : UpdateCityUseCase = Depends(get_update_city_use_case)
     ):
-        payload = await parse_optional_request_payload(
-            request,
-            city_data,
-            form_field_name="city_data",
-            body_key="city_data",
-        )
-        image_field = payload.pop("image", None)
-        image_bytes, content_type = await parse_image_input(image_file, image_field)
-
-        updated = await service.update_city(
-            city_id=city_id,
-            update_data=payload,
-            image_bytes=image_bytes,
-            content_type=content_type,
-            storage=storage_service,
-        )
-        if not updated:
-            raise HTTPException(status_code=404, detail="City not found")
-
-        city = await service.get_city(city_id, storage=storage_service)
+        
+        payload = city_data.model_dump(exclude_none=True)
+        city = await use_case.execute(city_id, payload)
         return self.build_response("City updated successfully", city)
 
     @handle_api_exceptions

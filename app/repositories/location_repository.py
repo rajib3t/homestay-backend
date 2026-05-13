@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class LocationRepository(BaseRepository):
 
+
     @property
     def countries(self):
         return self.db.countries
@@ -88,7 +89,7 @@ class LocationRepository(BaseRepository):
         return await self.countries.count_documents(query, session=session)
 
     async def list_countries(self, query, session=None):
-        self._validate_pagination(page=query.page, size=query.size)
+        self.validate_pagination(page=query.page, size=query.size)
 
         mongo_query = CountryQueryBuilder.build(query.filters)
         pipeline = CountryPipelineBuilder.build(
@@ -164,7 +165,7 @@ class LocationRepository(BaseRepository):
 
     async def list_cities(self, query, session=None):
         logger.info(f"City query: {query}")
-        self._validate_pagination(page=query.page, size=query.size)
+        self.validate_pagination(page=query.page, size=query.size)
 
         mongo_query = await CityQueryBuilder.build(filters=query.filters, repository=self)
         pipeline = CityPipelineBuilder.build(
@@ -222,7 +223,7 @@ class LocationRepository(BaseRepository):
         query: LocationQuery,
         session=None,
     ):
-        self._validate_pagination(
+        self.validate_pagination(
             page=query.page,
             size=query.size,
         )
@@ -267,22 +268,4 @@ class LocationRepository(BaseRepository):
     # Shared helpers
     # -------------------------------------------------------------------------
 
-    @staticmethod
-    def _validate_pagination(page: int, size: int):
-        try:
-            page = int(page)
-            size = int(size)
-        except Exception:
-            raise AppException(
-                status_code=400,
-                message="Invalid pagination parameters",
-                error_code="INVALID_PAGINATION",
-                field="pagination",
-            )
-        if page < 1 or size < 1:
-            raise AppException(
-                status_code=400,
-                message="page and size must be positive integers",
-                error_code="INVALID_PAGINATION",
-                field="pagination",
-            )
+    

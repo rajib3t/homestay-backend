@@ -21,6 +21,7 @@ class CityImageService:
         image_data: str,
         country_id: str,
         city_name: str,
+        city_id: str = None,
     ):
 
         if not image_data or not self.storage:
@@ -32,7 +33,8 @@ class CityImageService:
             )
         )
 
-        slug = re.sub(
+        # Use city_id if provided, otherwise fall back to slug
+        identifier = city_id if city_id else re.sub(
             r"[^a-z0-9]+",
             "-",
             city_name.lower(),
@@ -41,7 +43,7 @@ class CityImageService:
         key = (
             f"cities/"
             f"{country_id}/"
-            f"{slug}-{uuid.uuid4().hex[:8]}.webp"
+            f"{identifier}.webp"
         )
 
         await self.storage.convert_and_upload_webp(
@@ -162,22 +164,6 @@ class CreateCityUseCase(BaseUseCase):
             ),
         }
 
-        image_key = (
-            await self.image_service.upload(
-                image_data=payload.get(
-                    "image"
-                ),
-                country_id=payload.get(
-                    "country"
-                ),
-                city_name=payload.get(
-                    "name"
-                ),
-            )
-        )
-
-        create_payload["image"] = image_key
-
         async with self.uow as uow:
 
             session = uow.get_session()
@@ -204,6 +190,36 @@ class CreateCityUseCase(BaseUseCase):
                     session=session,
                 )
             )
+
+        # Upload image after city is created so we have city_id
+        image_key = (
+            await self.image_service.upload(
+                image_data=payload.get(
+                    "image"
+                ),
+                country_id=payload.get(
+                    "country"
+                ),
+                city_name=payload.get(
+                    "name"
+                ),
+                city_id=city_id,  # Pass city_id for consistent path
+            )
+        )
+
+        # Update city with image key
+        if image_key:
+            async with self.uow as uow:
+                session = uow.get_session()
+                await self.service.update_city(
+                    city_id=city_id,
+                    payload={"image": image_key},
+                    session=session,
+                )
+                city = await self.service.get_city(
+                    city_id,
+                    session=session,
+                )
 
         return (
             self.response_builder.city(
@@ -312,6 +328,59 @@ class GetCityUseCase(BaseUseCase):
         )
 
 
+class GetCityBySlugUseCase(BaseUseCase):
+
+    def __init__(
+        self,
+        service,
+        storage,
+        current_user,
+        uow,
+    ):
+        self.service = service
+        self.current_user = current_user
+        self.uow = uow
+
+        image_service = CityImageService(
+            storage
+        )
+
+        self.image_service = image_service
+        self.response_builder = (
+            CityResponseBuilder(
+                image_service
+            )
+        )
+
+    async def execute(
+        self,
+        slug: str,
+    ):
+
+        async with self.uow as uow:
+
+            session = uow.get_session()
+
+            city = (
+                await self.service.get_city_by_slug(
+                    slug,
+                    session=session,
+                )
+            )
+
+        if not city:
+            raise AppException(
+                404,
+                "City not found",
+            )
+
+        return (
+            self.response_builder.city(
+                city
+            )
+        )
+
+
 class UpdateCityUseCase(BaseUseCase):
 
     def __init__(
@@ -356,6 +425,7 @@ class UpdateCityUseCase(BaseUseCase):
                 await self._prepare_payload(
                     payload=payload,
                     existing_city=existing_city,
+                    city_id=city_id,
                 )
             )
 
@@ -378,6 +448,7 @@ class UpdateCityUseCase(BaseUseCase):
         self,
         payload: dict,
         existing_city: dict,
+        city_id: str = None,
     ):
         prepared = {
             **payload,
@@ -401,6 +472,124 @@ class UpdateCityUseCase(BaseUseCase):
             image_data=image_data,
             country_id=payload.get("country", existing_city["country"]),
             city_name=payload.get("name", existing_city["name"]),
+            city_id=city_id,  # Pass city_id for consistent path
+        )
+
+        prepared["image"] = image_key
+        return prepared
+
+    async def _delete_old_image(
+        self,
+        old_image: str,
+        new_image: str,
+    ):
+
+        if (
+            not old_image
+            or not new_image
+            or old_image == new_image
+        ):
+            return
+
+        await self.image_service.delete(old_image)
+
+
+class UpdateCityBySlugUseCase(BaseUseCase):
+
+    def __init__(
+        self,
+        service,
+        storage,
+        current_user,
+        uow,
+    ):
+        self.service = service
+        self.current_user = current_user
+        self.uow = uow
+
+        image_service = CityImageService(storage)
+
+        self.image_service = image_service
+
+        self.response_builder = (
+            CityResponseBuilder(
+                image_service
+            )
+        )
+
+    async def execute(
+        self,
+        slug: str,
+        payload: dict,
+    ):
+
+        async with self.uow as uow:
+
+            session = uow.get_session()
+
+            # First get city by slug to get the ID
+            city = await self.service.get_city_by_slug(slug, session=session)
+            city_id = city["id"]
+
+            existing_city = (
+                await self.service.get_raw_city(
+                    city_id=city_id,
+                    session=session,
+                )
+            )
+
+            update_payload = (
+                await self._prepare_payload(
+                    payload=payload,
+                    existing_city=existing_city,
+                    city_id=city_id,
+                )
+            )
+
+            updated_city = (
+                await self.service.update_city(
+                    city_id=city_id,
+                    payload=update_payload,
+                    session=session,
+                )
+            )
+
+        await self._delete_old_image(
+            old_image=existing_city.get("image"),
+            new_image=update_payload.get("image"),  # None if unchanged → guard skips delete
+        )
+
+        return self.response_builder.city(updated_city)
+
+    async def _prepare_payload(
+        self,
+        payload: dict,
+        existing_city: dict,
+        city_id: str = None,
+    ):
+        prepared = {
+            **payload,
+            "updated_by": self.current_user.id,
+        }
+
+        image_data = payload.get("image")
+
+        # No image field sent — client wants to keep existing, don't touch it
+        if not image_data:
+            prepared.pop("image", None)  # ensure image key not in payload at all
+            return prepared
+
+        # Client sent back the existing presigned URL — treat as unchanged
+        if not image_data.startswith("data:image"):
+            prepared.pop("image", None)
+            return prepared
+
+        # Fresh base64 upload — upload and replace
+        image_key = await self.image_service.upload(
+            image_data=image_data,
+            country_id=payload.get("country", existing_city["country"]),
+            city_name=payload.get("name", existing_city["name"]),
+            city_id=city_id,  # Pass city_id for consistent path
         )
 
         prepared["image"] = image_key

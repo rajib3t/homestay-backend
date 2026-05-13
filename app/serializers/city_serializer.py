@@ -12,6 +12,11 @@ class CitySerializer:
         if doc.get("country"):
             doc["country"] = str(doc["country"])
 
+        # Ensure slug is included in response
+        if "slug" in doc:
+            # Slug is already in the correct format (string)
+            pass
+
         # NESTED LOCATIONS
         for loc in doc.get("locations", []):
 

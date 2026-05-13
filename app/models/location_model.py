@@ -21,7 +21,8 @@ class CityList(ListRequest):
     name: Optional[str] = None 
     country: Optional[str] = None
     is_popular: Optional[bool] = None
-    _allowed_sort_fields = ['name', 'country']
+    slug: Optional[str] = None
+    _allowed_sort_fields = ['name', 'country', 'slug']
 
 class LocationList(ListRequest):
     name: Optional[str] = None 
@@ -41,6 +42,7 @@ class CityCreate(BaseModel):
     is_popular: bool = False
     image: Optional[str] = None
     is_active: bool = True
+    slug: Optional[str] = None
     
 
 
@@ -48,6 +50,8 @@ class LocationCreate(BaseModel):
     name: str
     city: str
     country: str
+    slug: Optional[str] = None
+    is_active: bool = True
 
 class CountryUpdate(BaseModel):
     name: Optional[str] = None
@@ -61,10 +65,12 @@ class CityUpdate(BaseModel):
     image: Optional[str] = None
     is_popular: Optional[bool] = None
     is_active: Optional[bool] = None
+    slug: Optional[str] = None
 
 class LocationUpdate(BaseModel):
     name: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
-    
+    slug: Optional[str] = None
+    is_active: Optional[bool] = None
 

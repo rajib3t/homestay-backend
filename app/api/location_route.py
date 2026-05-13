@@ -5,22 +5,30 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 
 from app.application.dto.city_query import CityQuery
 from app.application.dto.country_query import CountryQuery
-from app.application.use_cases.locations.city import CreateCityUseCase, GetCitiesUseCase, GetCityUseCase, UpdateCityUseCase
+from app.application.dto.location_query import LocationQuery
+from app.application.use_cases.locations.city import CreateCityUseCase, GetCitiesUseCase, GetCityUseCase, UpdateCityUseCase, GetCityBySlugUseCase, UpdateCityBySlugUseCase
 from app.application.use_cases.locations.country import CreateCountryUseCase, GetCountriesUseCase, GetCountryUseCase, UpdateCountryStatusUseCase, UpdateCountryUseCase
+from app.application.use_cases.locations.location import CreateLocationUseCase, GetLocationUseCase, GetLocationsUseCase, UpdateLocationUseCase
 from app.deps import get_location_service, get_storage_service, get_current_user
 
 from app.deps.locations_use import ( 
     get_create_country_use_case,  
     get_create_country_use_case,  
-    get_create_country_use_case, 
+    get_create_country_use_case,
+    get_create_location_use_case, 
     get_list_cities_use_case, 
-    get_list_countries_use_case, 
+    get_list_countries_use_case,
+    get_list_locations_use_case, 
     get_single_city_use_case, 
-    get_single_country_use_case, 
+    get_single_country_use_case,
+    get_single_location_use_case, 
     get_update_city_use_case, 
     get_update_country_status_use_case, 
     get_update_country_use_case, 
-    get_create_city_use_case
+    get_create_city_use_case,
+    get_city_by_slug_use_case,
+    get_update_city_by_slug_use_case,
+    get_update_location_use_case
 )
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.models.attribute_model import CreateAmenity
@@ -79,11 +87,16 @@ class LocationController(BaseController):
             ("patch", "/country/{country_id}/status",   self.toggle_country_status,  {"response_model": CountryResponse,    "response_model_by_alias": False}),
             ("get",   "/countries",                     self.list_countries,         {"response_model": CountriesResponse,  "response_model_by_alias": False}),
 
-            # City
+            # City (ID-based)
             ("post",  "/city",                          self.create_city,            {"response_model": CityResponse,       "response_model_by_alias": False, "status_code": 201}),
             ("get",   "/cities",                        self.list_cities,            {"response_model": CitiesResponse,     "response_model_by_alias": False}),
             ("get",   "/city/{city_id}",                self.get_city,               {"response_model": CityResponse,       "response_model_by_alias": False}),
             ("patch", "/city/{city_id}",                self.update_city,            {"response_model": CityResponse,       "response_model_by_alias": False}),
+            
+            # City (Slug-based)
+            ("get",   "/city/slug/{slug}",              self.get_city_by_slug,       {"response_model": CityResponse,       "response_model_by_alias": False}),
+            ("patch", "/city/slug/{slug}",              self.update_city_by_slug,    {"response_model": CityResponse,       "response_model_by_alias": False}),
+            
             ("get",   "/country/{country_id}/cities",   self.list_country_cities,    {"response_model": CitiesOnlyResponse, "response_model_by_alias": False}),
 
             # Location
@@ -228,6 +241,28 @@ class LocationController(BaseController):
         return self.build_response("City updated successfully", city)
 
     @handle_api_exceptions
+    async def get_city_by_slug(
+        self,
+        slug: str,
+        use_case: GetCityBySlugUseCase = Depends(get_city_by_slug_use_case),
+    ):
+        city = await use_case.execute(slug)
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+        return self.build_response("City retrieved successfully", city)
+
+    @handle_api_exceptions
+    async def update_city_by_slug(
+        self,
+        slug: str,
+        city_data: CityUpdate,
+        use_case: UpdateCityBySlugUseCase = Depends(get_update_city_by_slug_use_case),
+    ):
+        payload = city_data.model_dump(exclude_none=True)
+        city = await use_case.execute(slug, payload)
+        return self.build_response("City updated successfully", city)
+
+    @handle_api_exceptions
     async def list_country_cities(
         self,
         country_id: str,
@@ -252,67 +287,66 @@ class LocationController(BaseController):
     async def create_location(
         self,
         data: LocationCreate,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: CreateLocationUseCase = Depends(get_create_location_use_case),
     ):
-        location_id = await service.create_location(data.model_dump())
-        location = await service.get_location(location_id)
-        return self.build_response("Location created successfully", location)
+        location = await use_case.execute(data.model_dump())
+
+        return self.build_response(
+            "Location created successfully",
+            location,
+        )
 
     @handle_api_exceptions
     async def list_locations(
         self,
         params: LocationList = Depends(),
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: GetLocationsUseCase = Depends(get_list_locations_use_case),
     ):
         search = self.build_search(name=params.name, city=params.city, country=params.country)
-        result = await service.list_locations(
+        query = LocationQuery(
             page=params.page,
             size=params.size,
             sort_by=params.sort_by,
             sort_order=params.sort_order,
-            search=search,
+            filters=search
         )
+        result = await use_case.execute(query)
+         
+        
         return self.build_response("Locations retrieved successfully", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_location(
         self,
         location_id: str,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: GetLocationUseCase = Depends(
+            get_single_location_use_case
+        ),
     ):
-        location = await service.get_location(location_id)
-        if not location:
-            raise HTTPException(status_code=404, detail="Location not found")
-        return self.build_response("Location retrieved successfully", location)
+        location = await use_case.execute(location_id)
+
+        return self.build_response(
+            "Location retrieved successfully",
+            location,
+        )
 
     @handle_api_exceptions
     async def update_location(
         self,
         location_id: str,
         data: LocationUpdate,
-        current_user: str = Depends(get_current_user),
-        service: LocationService = Depends(get_location_service),
+        use_case: UpdateLocationUseCase = Depends(
+            get_update_location_use_case
+        ),
     ):
-        updated = await service.update_location(location_id, data.model_dump(exclude_none=True))
+        updated = await use_case.execute(location_id, data.model_dump(exclude_none=True))
         if not updated:
             raise HTTPException(status_code=404, detail="Location not found")
-        location = await service.get_location(location_id)
-        return self.build_response("Location updated successfully", location)
+        
+        return self.build_response("Location updated successfully", updated)
 
 
 controller = LocationController()
 router = controller.router
 
 
-@handle_api_exceptions
-async def get_country(
-    country_id: str,
-    service: LocationService = Depends(get_location_service),
-):
-    return await controller.get_country(
-        country_id=country_id,
-        service=service,
-    )

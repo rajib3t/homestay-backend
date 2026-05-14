@@ -16,7 +16,7 @@ class AmenitiesResponse(PaginationResponse):
 
 
 class Facility(BaseModel):
-    id: str = Field(..., alias="_id")
+    id: str 
     name: str
     icon: Optional[str] = None
     status: bool = Field(default=True, description="Status of the facility, e.g., true for active or false for inactive")

@@ -2,6 +2,8 @@ from uuid import uuid4
 
 from jmespath import search
 
+from app.application.dto.facility import FacilityQuery
+from app.serializers.facility_serializer import FacilitySerializer
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 import logging
@@ -91,7 +93,7 @@ class AttributeService(BaseService):
 
     async def list_amenities(
                 
-             self,
+            self,
             query: AmenityQuery,
             
             session=None
@@ -135,6 +137,7 @@ class AttributeService(BaseService):
         data: dict,
         session=None
     ) -> dict:
+
         if not ObjectId.is_valid(amenity_id):
             raise AppException(
                 status_code=400,
@@ -142,68 +145,54 @@ class AttributeService(BaseService):
                 error_code="INVALID_AMENITY_ID",
                 field="amenity_id"
             )
-        await self.repository.update_by_id(
-            "amenities", amenity_id, data, session=session
-        )
-        updated = await self.repository.find_by_id(
-            "amenities", amenity_id, session=session
-        )
-        if not updated:
+
+        try:
+            result = await self.repository.update_by_id(
+                "amenities", amenity_id, data, session=session
+            )
+        except DuplicateKeyError:
+            raise AppException(
+                status_code=409,
+                message="Amenity with this name already exists",
+                error_code="AMENITY_NAME_EXISTS",
+                field="name"
+            )
+
+        if result.matched_count == 0:
             raise AppException(
                 status_code=404,
                 message="Amenity not found after update",
                 error_code="AMENITY_NOT_FOUND",
                 field="amenity_id"
             )
-        return AmenitySerializer.serialize(updated)
 
-    async def toggle_amenity_status(self, amenity_id: str, session=None) -> Amenity:
-        if not ObjectId.is_valid(amenity_id):
-            raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
+        return await self.get_amenity(amenity_id, session) 
 
-        amenity = await self.repository.find_by_id("amenities", amenity_id, session=session)
-        if not amenity:
-            raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
-
-        new_status = not amenity.get("status", True)
-        self.timestamps(amenity, is_new=False)
-        result = await self.repository.update_by_id("amenities", amenity_id, {"status": new_status}, session=session)
-
-        if result.matched_count == 0:
-            raise AppException(status_code=404, message="Amenity not found during status toggle", error_code="AMENITY_NOT_FOUND_TOGGLE", field="amenity")
-
-        updated = await self.get_amenity(amenity_id, session=session)
-        return updated
+    
     
     # Similar methods for facilities can be implemented here following the same pattern as amenities
     async def create_facility(
         self,
         data: Dict[str, str],
         session=None,
-        storage: Optional[StorageService] = None) -> str:
         
+    ) :
         # Here you would typically insert into the database and return the created object
         try:
-            name = data.get("name")
-            icon = data.get("icon")
-            status = data.get("status", True)
-            # Placeholder for actual creation logic
-            new_facility = {
-                "name": name,
-                "icon": icon,
-                "status": status
-            }
-            if storage and icon and isinstance(icon, str) and icon.startswith("data:"):
-                raw, mime, ext = decode_data_url(icon)
-                key_name = name.lower().replace(" ", "_") if name else uuid4().hex
-                key = f"facilities/{key_name}_{uuid4().hex}{ext}"
+            self.timestamps(data, is_new=True)
 
-                await storage.upload_bytes(key, raw, content_type=mime)
+            result = await self.repository.insert_one(
+                "facilities",
+                data,
+                session=session
+            )
 
-                new_facility["icon"] = key
-            self.timestamps(new_facility, is_new=True)
-            result = await self.repository.insert_one("facilities", new_facility)
-            return str(result.inserted_id)
+            created = await self.repository.find_by_id(
+                "facilities",
+                result.inserted_id,
+                session=session
+            )
+            return FacilitySerializer.serialize(created)
         except DuplicateKeyError as e:
 
             error_msg = str(e)
@@ -232,95 +221,67 @@ class AttributeService(BaseService):
 
                 )
             
-    async def get_facility(self, facility_id: str, storage: Optional[StorageService] = None) -> Facility:    
+    async def get_facility(self, facility_id: str, session=None) -> Facility:    
         # validate ObjectId format first
         if not ObjectId.is_valid(facility_id):
             raise AppException(status_code=400, message="Invalid facility id", error_code="INVALID_FACILITY_ID", field="facility")
         
-        facility = await self.repository.find_by_id("facilities", facility_id)
+        facility = await self.repository.find_by_id("facilities", facility_id, session=session)
         if not facility:
             raise AppException(status_code=404, message="Facility not found", error_code="FACILITY_NOT_FOUND", field="facility")
-        # convert ObjectId to string for API responses
-        facility["_id"] = str(facility["_id"])
-        if storage and "icon" in facility:
-            try:
-                facility["icon"] = storage.generate_presigned_url(facility["icon"])
-            except Exception:
-                pass
-        return facility
+        
+        return FacilitySerializer.serialize(facility)
 
 
     async def list_facilities(
         self,
-        page: int = 1,
-        size: int = 10,
-        sort_by: str = "name",
-        sort_order: str = "asc",
-        search: dict = None,
-        storage: Optional[StorageService] = None
+       
+        query: FacilityQuery,
+            
+        session=None
     ) -> Dict[str, object]:
-        try:
-            page = int(page)
-            size = int(size)
-        except Exception:
-            raise AppException(
-                status_code=400,
-                message="Invalid pagination parameters",
-                error_code="INVALID_PAGINATION_PARAMETERS",
-                field="pagination"
-            )
-        if page < 1 or size < 1:
-            raise AppException(
-                status_code=400,
-                message="page and size must be positive integers",
-                error_code="INVALID_PAGINATION_VALUES",
-                field="pagination"
-            )
+            await self.validate_pagination(query.page, query.size)
+            filters = await self.build_query_filters(query.filters)
+            
+            skip = (query.page - 1) * query.size
+            sort_direction = 1 if query.sort_order.lower() == "asc" else -1
 
-        skip = (page - 1) * size
-        sort_direction = 1 if sort_order.lower() == "asc" else -1
+            cursor = (
+                    self.repository
+                    .find_many("facilities", filters, session=session)
+                    .sort(query.sort_by, sort_direction)
+                    .skip(skip)
+                    .limit(query.size)
+                )
+            
 
-        query = {}
+            
+            total = await self.repository.count_documents("facilities", filters, session=session)
+            items = []
 
-        if search:
-            for k, v in search.items():
+            async for doc in cursor:
 
-                if isinstance(v, dict):
-                    query[k] = v
+                serialized = FacilitySerializer.serialize(doc)
 
-                elif isinstance(v, str):
-                    lv = v.strip().lower()
-
-                    if lv in ("true", "false"):
-                        query[k] = lv == "true"
-                    else:
-                        query[k] = {"$regex": v, "$options": "i"}
-
-                else:
-                    query[k] = v
-
-    
-        cursor = self.repository.find_many("facilities", query).sort(sort_by, sort_direction).skip(skip).limit(size)
-        total = await self.repository.count_documents("facilities", query)
-        items = []
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            if storage and "icon" in doc:
-                try:
-                    doc["icon"] = storage.generate_presigned_url(doc["icon"])
-                except Exception:
-                    pass
-            items.append(doc)
-        return {
-            "total": total,
-            "page": page,
-            "size": size,
-            "items": items
-        }
+                items.append(serialized)
+            return {
+                "total": total,
+                "page": query.page,
+                "size": query.size,
+                "items": items
+            }
        
         
     
-    async def update_facility(self, facility_id: str, data: Dict[str, str], storage: Optional[StorageService] = None) -> Facility:
+    # attribute_service.py
+
+    async def update_facility(
+        self,
+        facility_id: str,
+        data: Dict[str, str],
+        session=None
+    ) -> Dict[str, str]:
+
         if not ObjectId.is_valid(facility_id):
             raise AppException(status_code=400, message="Invalid facility id", error_code="INVALID_FACILITY_ID", field="facility")
 
@@ -329,13 +290,20 @@ class AttributeService(BaseService):
 
         self.timestamps(data, is_new=False)
 
-        result = await self.repository.update_by_id("facilities", facility_id, data)
+        try:
+            result = await self.repository.update_by_id("facilities", facility_id, data, session=session)
+        except DuplicateKeyError:
+            raise AppException(
+                status_code=409,
+                message="Facility with this name already exists",
+                error_code="FACILITY_NAME_EXISTS",
+                field="name"
+            )
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Facility not found", error_code="FACILITY_NOT_FOUND", field="facility")
 
-        updated = await self.get_facility(facility_id, storage)
-        return updated
+        return await self.get_facility(facility_id, session)
     
 
     async def toggle_facility_status(self, facility_id: str) -> Facility:

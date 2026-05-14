@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+from app.application.dto.facility import FacilityQuery
 from app.application.use_cases.attribute.amenity import CreateAmenityUseCase, GetAmenitiesUseCase, GetAmenityUseCase, UpdateAmenityUseCase
-from app.deps.attribute_use import get_create_amenity_use_case, get_list_amenities_use_case, get_single_amenity_update_use_case, get_single_amenity_use_case
+from app.application.use_cases.attribute.facility import CreateFacilityUseCase, GetFacilitiesUseCase, GetFacilityUseCase, UpdateFacilityUseCase
+from app.deps.attribute_use import get_create_amenity_use_case, get_create_facility_use_case, get_list_amenities_use_case, get_list_facilities_use_case, get_single_amenity_update_use_case, get_single_amenity_use_case, get_single_facility_update_use_case, get_single_facility_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.deps import get_attribute_service, get_storage_service, get_current_user
 from app.services.attribute_service import AttributeService
@@ -140,45 +142,37 @@ class AttributeController(BaseController):
     async def create_facility(
         self,
         data: CreateFacility,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: CreateFacilityUseCase = Depends(get_create_facility_use_case)
     ):
-        payload = data.model_dump()
-        item_id = await service.create_facility(payload, storage_service)
-        item = await service.get_facility(item_id, storage_service)
+        item = await use_case.execute(data)
         return self.build_response("Facility created", item)
 
     @handle_api_exceptions
     async def list_facilities(
         self,
         params: ListFacilities = Depends(),
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        
+        use_case: GetFacilitiesUseCase = Depends(get_list_facilities_use_case)
     ):
         search = self.build_search(name=params.name, status=params.status)
-        result = await service.list_facilities(
-            page=params.page,
-            size=params.size,
-            sort_by=params.sort_by,
-            sort_order=params.sort_order,
-            search=search,
-            storage=storage_service,
-        )
+        result = await use_case.execute(
+            FacilityQuery(
+                page=params.page,
+                size=params.size,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                filters=search
+            
+        ))
         return self.build_response("Facilities list", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_facility(
         self,
         facility_id: str,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: GetFacilityUseCase = Depends(get_single_facility_use_case)
     ):
-        item = await service.get_facility(facility_id, storage_service)
-        if not item:
-            raise HTTPException(status_code=404, detail="Facility not found")
+        item = await use_case.execute(facility_id)
         return self.build_response("Facility fetched", item)
 
     @handle_api_exceptions
@@ -186,23 +180,20 @@ class AttributeController(BaseController):
         self,
         facility_id: str,
         data: UpdateFacility,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: UpdateFacilityUseCase = Depends(get_single_facility_update_use_case)
     ):
-        update_data = data.model_dump(exclude_none=True)
-        updated = await service.update_facility(facility_id, update_data, storage_service)
+        
+        updated = await use_case.execute(facility_id, data)
         return self.build_response("Facility updated", updated)
 
     @handle_api_exceptions
     async def update_facility_status(
         self,
         facility_id: str,
-        status_data: UpdateFacilityStatus,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        status_data: UpdateFacility,
+        use_case: UpdateFacilityUseCase = Depends(get_single_facility_update_use_case)
     ):
-        updated = await service.update_facility(facility_id, {"status": status_data.status}, storage=None)
+        updated = await use_case.execute(facility_id, status_data)
         return self.build_response("Facility status updated", updated)
 
     # ---------------- ROOM TYPE ---------------- #

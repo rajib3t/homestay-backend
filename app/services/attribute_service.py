@@ -306,23 +306,7 @@ class AttributeService(BaseService):
         return await self.get_facility(facility_id, session)
     
 
-    async def toggle_facility_status(self, facility_id: str) -> Facility:
-        if not ObjectId.is_valid(facility_id):
-            raise AppException(status_code=400, message="Invalid facility id", error_code="INVALID_FACILITY_ID", field="facility")
-
-        facility = await self.repository.find_by_id("facilities", facility_id)
-        if not facility:
-            raise AppException(status_code=404, message="Facility not found", error_code="FACILITY_NOT_FOUND", field="facility")
-
-        new_status = not facility.get("status", True)
-        self.timestamps(facility, is_new=False)
-        result = await self.repository.update_by_id("facilities", facility_id, {"status": new_status})
-
-        if result.matched_count == 0:
-            raise AppException(status_code=404, message="Facility not found during status toggle", error_code="FACILITY_NOT_FOUND_TOGGLE", field="facility")
-
-        updated = await self.get_facility(facility_id)
-        return updated
+    
     
 
     async def create_room_type(self, data: Dict[str, str]) -> str:

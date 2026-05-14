@@ -28,7 +28,7 @@ class FacilitiesResponse(PaginationResponse):
     data: list[Facility] = Field(default_factory=list)
 
 class RoomType(BaseModel):
-    id: str = Field(..., alias="_id")
+    id: str
     name: str
     capacity: int
     status: bool = Field(default=True, description="Status of the room type, e.g., true for active or false for inactive")

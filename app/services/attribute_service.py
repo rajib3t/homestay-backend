@@ -1,9 +1,12 @@
 from uuid import uuid4
+from warnings import filters
 
 from jmespath import search
 
+from app.application.dto.bed_type import BedTypeQuery
 from app.application.dto.facility import FacilityQuery
 from app.serializers.facility_serializer import FacilitySerializer
+from app.serializers.room_type_serializer import RoomTypeSerializer
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 import logging
@@ -309,21 +312,18 @@ class AttributeService(BaseService):
     
     
 
-    async def create_room_type(self, data: Dict[str, str]) -> str:
+    async def create_room_type(
+            self, 
+            data: Dict[str, str],
+            session=None
+        ) -> dict:
         # Here you would typically insert into the database and return the created object
         try:
-            name = data.get("name")
-            capacity = data.get("capacity")
-            status = data.get("status", True)
-            # Placeholder for actual creation logic
-            new_room_type = {
-                "name": name,
-                "capacity": capacity,
-                "status": status
-            }
-            self.timestamps(new_room_type, is_new=True)
-            result = await self.repository.insert_one("room_types", new_room_type)
-            return str(result.inserted_id)
+            
+            self.timestamps(data, is_new=True)
+            result = await self.repository.insert_one("room_types", data, session=session)
+            created = await self.repository.find_by_id("room_types", result.inserted_id, session=session)
+            return RoomTypeSerializer.serialize(created)
         except DuplicateKeyError as e:
 
             error_msg = str(e)
@@ -352,82 +352,56 @@ class AttributeService(BaseService):
 
                 )
         
-    async def get_room_type(self, room_type_id: str) -> RoomType:    
+    async def get_room_type(self, room_type_id: str, session=None) -> RoomType:    
         # validate ObjectId format first
         if not ObjectId.is_valid(room_type_id):
             raise AppException(status_code=400, message="Invalid room type id", error_code="INVALID_ROOM_TYPE_ID", field="room_type")
         
-        room_type = await self.repository.find_by_id("room_types", room_type_id)
+        room_type = await self.repository.find_by_id("room_types", room_type_id, session=session)
         if not room_type:
             raise AppException(status_code=404, message="Room type not found", error_code="ROOM_TYPE_NOT_FOUND", field="room_type")
-        # convert ObjectId to string for API responses
-        room_type["_id"] = str(room_type["_id"])
-        return room_type
+       
+        return RoomTypeSerializer.serialize(room_type)
     
 
     async def list_room_types(
         self,
-        page: int = 1,
-        size: int = 10,
-        sort_by: str = "name",
-        sort_order: str = "asc",
-        search: dict = None
+        query: BedTypeQuery,
+        session=None
     ) -> Dict[str, object]:
-        try:
-            page = int(page)
-            size = int(size)
-        except Exception:
-            raise AppException(
-                status_code=400,
-                message="Invalid pagination parameters",
-                error_code="INVALID_PAGINATION_PARAMETERS",
-                field="pagination"
-            )
-        if page < 1 or size < 1:
-            raise AppException(
-                status_code=400,
-                message="page and size must be positive integers",
-                error_code="INVALID_PAGINATION_VALUES",
-                field="pagination"
-            )
+        
+            await self.validate_pagination(query.page, query.size)
+            filters = await self.build_query_filters(query.filters)
+            skip = (query.page - 1) * query.size
+            sort_direction = 1 if query.sort_order.lower() == "asc" else -1
 
-        skip = (page - 1) * size
-        sort_direction = 1 if sort_order.lower() == "asc" else -1
 
-        query = {}
-
-        if search:
-            for k, v in search.items():
-
-                if isinstance(v, dict):
-                    query[k] = v
-
-                elif isinstance(v, str):
-                    lv = v.strip().lower()
-
-                    if lv in ("true", "false"):
-                        query[k] = lv == "true"
-                    else:
-                        query[k] = {"$regex": v, "$options": "i"}
-
-                else:
-                    query[k] = v
 
     
-        cursor = self.repository.find_many("room_types", query).sort(sort_by, sort_direction).skip(skip).limit(size)
-        total = await self.repository.count_documents("room_types", query)
-        items = []
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            items.append(doc)
-        return {
-            "total": total,
-            "page": page,
-            "size": size,
-            "items": items
-        }
+            cursor = (
+                    self.repository
+                    .find_many("room_types", filters, session=session)
+                    .sort(query.sort_by, sort_direction)
+                    .skip(skip)
+                    .limit(query.size)
+                )
+            total = await self.repository.count_documents("room_types", filters, session=session)
+            items = []
+            async for doc in cursor:
+                items.append(RoomTypeSerializer.serialize(doc))
+            return {
+                "items": items,
+                "total": total,
+                "page": query.page,
+                "size": query.size
+            }
     
-    async def update_room_type(self, room_type_id: str, data: Dict[str, str]) -> RoomType:
+    async def update_room_type(
+            self, 
+            room_type_id: str, 
+            data: Dict[str, str],
+            session=None
+        ) -> dict:
         if not ObjectId.is_valid(room_type_id):
             raise AppException(status_code=400, message="Invalid room type id", error_code="INVALID_ROOM_TYPE_ID", field="room_type")
 
@@ -435,32 +409,23 @@ class AttributeService(BaseService):
             raise AppException(status_code=400, message="No fields to update", error_code="NO_UPDATE_FIELDS", field="room_type")
 
         self.timestamps(data, is_new=False)
-
-        result = await self.repository.update_by_id("room_types", room_type_id, data)
+        try:
+            result = await self.repository.update_by_id("room_types", room_type_id, data, session=session)
+        except DuplicateKeyError:
+            raise AppException(
+                status_code=409,
+                message="Room type with this name already exists",
+                error_code="ROOM_TYPE_NAME_EXISTS",
+                field="name"
+            )
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Room type not found", error_code="ROOM_TYPE_NOT_FOUND", field="room_type")
 
-        updated = await self.get_room_type(room_type_id)
+        updated = await self.get_room_type(room_type_id, session=session)
         return updated
+
     
-    async def toggle_room_type_status(self, room_type_id: str) -> RoomType:
-        if not ObjectId.is_valid(room_type_id):
-            raise AppException(status_code=400, message="Invalid room type id", error_code="INVALID_ROOM_TYPE_ID", field="room_type")
-
-        room_type = await self.repository.find_by_id("room_types", room_type_id)
-        if not room_type:
-            raise AppException(status_code=404, message="Room type not found", error_code="ROOM_TYPE_NOT_FOUND", field="room_type")
-
-        new_status = not room_type.get("status", True)
-        self.timestamps(room_type, is_new=False)
-        result = await self.repository.update_by_id("room_types", room_type_id, {"status": new_status})
-
-        if result.matched_count == 0:
-            raise AppException(status_code=404, message="Room type not found during status toggle", error_code="ROOM_TYPE_NOT_FOUND_TOGGLE", field="room_type")
-
-        updated = await self.get_room_type(room_type_id)
-        return updated
     
 
 

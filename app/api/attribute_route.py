@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from app.application.dto.bed_type import BedTypeQuery
 from app.application.dto.facility import FacilityQuery
 from app.application.use_cases.attribute.amenity import CreateAmenityUseCase, GetAmenitiesUseCase, GetAmenityUseCase, UpdateAmenityUseCase
+from app.application.use_cases.attribute.bed_type import CreateBedTypeUseCase, GetBedTypeUseCase, GetBedTypesUseCase, UpdateBedTypeUseCase
 from app.application.use_cases.attribute.facility import CreateFacilityUseCase, GetFacilitiesUseCase, GetFacilityUseCase, UpdateFacilityUseCase
-from app.deps.attribute_use import get_create_amenity_use_case, get_create_facility_use_case, get_list_amenities_use_case, get_list_facilities_use_case, get_single_amenity_update_use_case, get_single_amenity_use_case, get_single_facility_update_use_case, get_single_facility_use_case
+from app.deps.attribute_use import get_create_amenity_use_case, get_create_bed_type_use_case, get_create_facility_use_case, get_list_amenities_use_case, get_list_bed_types_use_case, get_list_facilities_use_case, get_single_amenity_update_use_case, get_single_amenity_use_case, get_single_bed_type_update_use_case, get_single_bed_type_update_use_case, get_single_bed_type_use_case, get_single_facility_update_use_case, get_single_facility_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.deps import get_attribute_service, get_storage_service, get_current_user
 from app.services.attribute_service import AttributeService
@@ -202,28 +204,26 @@ class AttributeController(BaseController):
     async def create_room_type(
         self,
         data: CreateRoomType,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        use_case: CreateBedTypeUseCase = Depends(get_create_bed_type_use_case)
     ):
-        payload = data.model_dump()
-        item_id = await service.create_room_type(payload)
-        item = await service.get_room_type(item_id)
+        item = await use_case.execute(data)
         return self.build_response("Room type created", item)
 
     @handle_api_exceptions
     async def list_room_types(
         self,
         params: ListRoomTypes = Depends(),
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        use_case: GetBedTypesUseCase = Depends(get_list_bed_types_use_case)
     ):
         search = self.build_search(name=params.name, status=params.status)
-        result = await service.list_room_types(
-            page=params.page,
-            size=params.size,
-            sort_by=params.sort_by,
-            sort_order=params.sort_order,
-            search=search,
+        result = await use_case.execute(
+            BedTypeQuery(
+                page=params.page,
+                size=params.size,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                filters=search
+            )
         )
         return self.build_response("Room types list", data=result["items"], meta=_pagination_meta(result))
 
@@ -231,12 +231,10 @@ class AttributeController(BaseController):
     async def get_room_type(
         self,
         room_type_id: str,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        use_case: GetBedTypeUseCase = Depends(get_single_bed_type_use_case)
     ):
-        item = await service.get_room_type(room_type_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Room type not found")
+        item = await use_case.execute(room_type_id)
+        
         return self.build_response("Room type fetched", item)
 
     @handle_api_exceptions
@@ -244,22 +242,20 @@ class AttributeController(BaseController):
         self,
         room_type_id: str,
         data: UpdateRoomType,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        use_case: UpdateBedTypeUseCase = Depends(get_single_bed_type_update_use_case)
     ):
-        update_data = data.model_dump(exclude_none=True)
-        updated = await service.update_room_type(room_type_id, update_data)
+        
+        updated = await use_case.execute(room_type_id, data)
         return self.build_response("Room type updated", updated)
 
     @handle_api_exceptions
     async def update_room_type_status(
         self,
         room_type_id: str,
-        status_data: UpdateRoomTypeStatus,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        status_data: UpdateRoomType,
+        use_case: UpdateBedTypeUseCase = Depends(get_single_bed_type_update_use_case)
     ):
-        updated = await service.update_room_type(room_type_id, {"status": status_data.status})
+        updated = await use_case.execute(room_type_id, status_data)
         return self.build_response("Room type status updated", updated)
 
 

@@ -2,6 +2,7 @@ from fastapi import Depends
 
 
 from app.application.use_cases.attribute.amenity  import CreateAmenityUseCase, GetAmenitiesUseCase, GetAmenityUseCase, UpdateAmenityUseCase
+from app.application.use_cases.attribute.bed_type import CreateBedTypeUseCase, GetBedTypeUseCase, GetBedTypesUseCase, UpdateBedTypeUseCase
 from app.application.use_cases.attribute.facility import CreateFacilityUseCase, GetFacilitiesUseCase, GetFacilityUseCase, UpdateFacilityUseCase
 from app.deps.auth import get_current_user
 from app.deps.services import get_attribute_service, get_storage_service
@@ -117,6 +118,55 @@ def get_single_facility_update_use_case(
     return UpdateFacilityUseCase(
         service,
         storage_service,
+        current_user,
+        uow
+    )
+
+
+def get_create_bed_type_use_case(
+    service=Depends(get_attribute_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
+):
+    return CreateBedTypeUseCase(
+        service, 
+        current_user,
+        uow
+    )
+
+def get_list_bed_types_use_case(
+    service=Depends(get_attribute_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
+):
+    # This function can be implemented similarly to get_list_amenities_use_case when the GetBedTypesUseCase is defined
+    return GetBedTypesUseCase(
+        service,
+        current_user,
+        uow
+    )
+
+def get_single_bed_type_use_case(
+    service=Depends(get_attribute_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
+):
+    # This function can be implemented similarly to get_single_amenity_use_case when the GetBedTypeUseCase is defined
+    return GetBedTypeUseCase(
+        service,
+        current_user,
+        uow
+    )
+
+
+def get_single_bed_type_update_use_case(
+    service=Depends(get_attribute_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
+):
+    # This function can be implemented similarly to get_single_amenity_update_use_case when the UpdateBedTypeUseCase is defined
+    return UpdateBedTypeUseCase(
+        service,
         current_user,
         uow
     )

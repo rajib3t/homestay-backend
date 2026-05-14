@@ -3,7 +3,7 @@ from typing import Optional
 from app.schemas.response import BaseResponse, PaginationResponse
 
 class Amenity(BaseModel):
-    id: str = Field(..., alias="_id")
+    id: str
     name: str
     icon: Optional[str] = None
     status: bool = Field(default=True, description="Status of the amenity, e.g., true for active or false for inactive")

@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
+from app.application.use_cases.attribute.amenity import CreateAmenityUseCase, GetAmenitiesUseCase, GetAmenityUseCase, UpdateAmenityUseCase
+from app.deps.attribute_use import get_create_amenity_use_case, get_list_amenities_use_case, get_single_amenity_update_use_case, get_single_amenity_use_case
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.deps import get_attribute_service, get_storage_service, get_current_user
 from app.services.attribute_service import AttributeService
@@ -16,6 +18,8 @@ from app.schemas.attribute_schema import (
 )
 from app.utils.api_utils import upload_data_url_asset, replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
+
+from app.application.dto.attribute import Amenity, AmenityQuery
 
 from .base_controller import BaseController
 
@@ -71,20 +75,13 @@ class AttributeController(BaseController):
     async def create_amenity(
         self,
         data: CreateAmenity,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: CreateAmenityUseCase = Depends(get_create_amenity_use_case)
     ):
-        payload = data.model_dump()
-        icon = payload.get("icon")
+        
+        
+        item = await use_case.execute(data)
 
-        if icon and icon.startswith("data:"):
-            payload["icon"] = await upload_data_url_asset(
-                storage_service, icon, "amenities", payload["name"]
-            )
-
-        item_id = await service.create_amenity(payload, storage_service)
-        item = await service.get_amenity(item_id, storage_service)
+        
 
         return self.build_response("Amenity created", item)
 
@@ -92,32 +89,29 @@ class AttributeController(BaseController):
     async def list_amenities(
         self,
         params: ListAmenities = Depends(),
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: GetAmenitiesUseCase = Depends(get_list_amenities_use_case)
     ):
         search = self.build_search(name=params.name, status=params.status)
-        result = await service.list_amenities(
-            page=params.page,
-            size=params.size,
-            sort_by=params.sort_by,
-            sort_order=params.sort_order,
-            search=search,
-            storage=storage_service,
+        result = await use_case.execute(
+            AmenityQuery(
+                page=params.page,
+                size=params.size,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                filters=search
+            )
         )
+            
         return self.build_response("Amenities list", data=result["items"], meta=_pagination_meta(result))
 
     @handle_api_exceptions
     async def get_amenity(
         self,
         amenity_id: str,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: GetAmenityUseCase = Depends(get_single_amenity_use_case)
     ):
-        item = await service.get_amenity(amenity_id, storage_service)
-        if not item:
-            raise HTTPException(status_code=404, detail="Amenity not found")
+        item = await use_case.execute(amenity_id)
+        
         return self.build_response("Amenity fetched", item)
 
     @handle_api_exceptions
@@ -125,37 +119,19 @@ class AttributeController(BaseController):
         self,
         amenity_id: str,
         data: UpdateAmenity,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: UpdateAmenityUseCase = Depends(get_single_amenity_update_use_case)
     ):
-        update_data = data.model_dump(exclude_none=True)
-        icon = update_data.get("icon")
-
-        if isinstance(icon, str) and icon.startswith("data:"):
-            existing = await service.get_amenity(amenity_id, storage_service)
-            if not existing:
-                raise HTTPException(status_code=404, detail="Amenity not found")
-            update_data["icon"] = await replace_data_url_asset(
-                storage_service,
-                icon,
-                "amenities",
-                update_data.get("name") or existing.get("name"),
-                existing.get("icon"),
-            )
-
-        updated = await service.update_amenity(amenity_id, update_data, storage_service)
+        updated = await use_case.execute(amenity_id, data)
         return self.build_response("Amenity updated", updated)
 
     @handle_api_exceptions
     async def update_amenity_status(
         self,
         amenity_id: str,
-        status_data: UpdateAmenityStatus,
-        current_user: str = Depends(get_current_user),
-        service: AttributeService = Depends(get_attribute_service),
+        status_data: UpdateAmenity,
+        use_case: UpdateAmenityUseCase = Depends(get_single_amenity_update_use_case)
     ):
-        updated = await service.update_amenity(amenity_id, {"status": status_data.status}, storage=None)
+        updated = await use_case.execute(amenity_id, status_data)
         return self.build_response("Amenity status updated", updated)
 
     # ---------------- FACILITY ---------------- #

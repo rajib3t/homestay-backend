@@ -1,5 +1,7 @@
 from uuid import uuid4
 
+from jmespath import search
+
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 import logging
@@ -11,8 +13,8 @@ from app.repositories.attribute_repository import AttributeRepository
 from app.schemas.attribute_schema import Amenity, Facility, RoomType
 from app.utils.api_utils import decode_data_url
 logger = logging.getLogger(__name__)
-
-
+from app.application.dto.attribute import Amenity as AmenityDTO, AmenityQuery
+from app.serializers.amenity_serializer import AmenitySerializer
 class AttributeService(BaseService):
     """Service for managing attributes like amenities, facilities, etc.
 
@@ -25,28 +27,27 @@ class AttributeService(BaseService):
         self.repository = repository
 
     async def create_amenity(
-            self, 
-            data: Dict[str, str], 
-            storage: Optional[StorageService] = None
-        ) -> str:
-        
-       
-        name = data.get("name")
-        icon = data.get("icon")
-        status = data.get("status", True)
-        # Here you would typically insert into the database and return the created object
+        self,
+        data: AmenityDTO,
+        session=None
+    ):
         try:
-            # Placeholder for actual creation logic
-            new_amenity = {
-                "name": name,
-                "icon": icon,
-                "status": status
-            }
-            
+            self.timestamps(data, is_new=True)
 
-            self.timestamps(new_amenity, is_new=True)
-            result = await self.repository.insert_one("amenities", new_amenity)
-            return str(result.inserted_id)
+            result = await self.repository.insert_one(
+                "amenities",
+                data,
+                session=session
+            )
+
+            created = await self.repository.find_by_id(
+                "amenities",
+                result.inserted_id,
+                session=session
+            )
+
+            return AmenitySerializer.serialize(created)
+
         except DuplicateKeyError as e:
 
             error_msg = str(e)
@@ -65,142 +66,120 @@ class AttributeService(BaseService):
                 error_code="AMENITY_CREATION_FAILED",
                 field="name"
             )
+
         except Exception as e:
             logger.exception("Unexpected error while creating amenity")
+
             raise AppException(
                 status_code=500,
                 message=f"An unexpected error occurred: {str(e)}",
                 error_code="AMENITY_CREATION_ERROR",
                 field="name"
-
             )
     
-    async def get_amenity(self, amenity_id: str, storage: Optional[StorageService] = None) -> Amenity:
+    async def get_amenity(self, amenity_id: str, session=None) -> Amenity:
         # validate ObjectId format first
         if not ObjectId.is_valid(amenity_id):
             raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
         
-        amenity = await self.repository.find_by_id("amenities", amenity_id)
+        amenity = await self.repository.find_by_id("amenities", amenity_id, session=session)
         if not amenity:
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
         # convert ObjectId to string for API responses
-        amenity["_id"] = str(amenity["_id"])
-        if storage and amenity.get("icon"):
-            try:
-                amenity["icon"] = storage.generate_presigned_url(amenity["icon"])
-            except Exception:
-                pass
-        return amenity
+        
+        return AmenitySerializer.serialize(amenity)
 
     async def list_amenities(
                 
-            self,
-            page: int = 1,
-            size: int = 10,
-            sort_by: str = "name",
-            sort_order: str = "asc",
-            search: dict = None,
-            storage: Optional[StorageService] = None
+             self,
+            query: AmenityQuery,
+            
+            session=None
         ) -> Dict[str, object]:
-        try:
-            page = int(page)
-            size = int(size)
-        except Exception:
+        
+            await self.validate_pagination(query.page, query.size)
+            filters = await self.build_query_filters(query.filters)
+            
+            skip = (query.page - 1) * query.size
+            sort_direction = 1 if query.sort_order.lower() == "asc" else -1
+
+            cursor = (
+                    self.repository
+                    .find_many("amenities", filters, session=session)
+                    .sort(query.sort_by, sort_direction)
+                    .skip(skip)
+                    .limit(query.size)
+                )
+            
+
+            
+            total = await self.repository.count_documents("amenities", filters, session=session)
+            items = []
+
+            async for doc in cursor:
+
+                serialized = AmenitySerializer.serialize(doc)
+
+                items.append(serialized)
+            return {
+                "total": total,
+                "page": query.page,
+                "size": query.size,
+                "items": items
+            }
+    
+    
+    async def update_amenity(
+        self,
+        amenity_id: str,
+        data: dict,
+        session=None
+    ) -> dict:
+        if not ObjectId.is_valid(amenity_id):
             raise AppException(
                 status_code=400,
-                message="Invalid pagination parameters",
-                error_code="INVALID_PAGINATION_PARAMETERS",
-                field="pagination"
+                message="Invalid amenity ID",
+                error_code="INVALID_AMENITY_ID",
+                field="amenity_id"
             )
-        if page < 1 or size < 1:
+        await self.repository.update_by_id(
+            "amenities", amenity_id, data, session=session
+        )
+        updated = await self.repository.find_by_id(
+            "amenities", amenity_id, session=session
+        )
+        if not updated:
             raise AppException(
-                status_code=400,
-                message="page and size must be positive integers",
-                error_code="INVALID_PAGINATION_VALUES",
-                field="pagination"
+                status_code=404,
+                message="Amenity not found after update",
+                error_code="AMENITY_NOT_FOUND",
+                field="amenity_id"
             )
+        return AmenitySerializer.serialize(updated)
 
-        skip = (page - 1) * size
-        sort_direction = 1 if sort_order.lower() == "asc" else -1
-
-        query = {}
-
-        if search:
-            for k, v in search.items():
-
-                if isinstance(v, dict):
-                    query[k] = v
-
-                elif isinstance(v, str):
-                    lv = v.strip().lower()
-
-                    if lv in ("true", "false"):
-                        query[k] = lv == "true"
-                    else:
-                        query[k] = {"$regex": v, "$options": "i"}
-
-                else:
-                    query[k] = v
-
-    
-        cursor = self.repository.find_many("amenities", query).sort(sort_by, sort_direction).skip(skip).limit(size)
-        total = await self.repository.count_documents("amenities", query)
-        items = []
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            if storage and "icon" in doc:
-                try:
-                    doc["icon"] = storage.generate_presigned_url(doc["icon"])
-                except Exception:
-                    pass
-            items.append(doc)
-        return {
-            "total": total,
-            "page": page,
-            "size": size,
-            "items": items
-        }
-    
-    
-    async def update_amenity(self, amenity_id: str, data: Dict[str, str], storage: Optional[StorageService] = None) -> Amenity:
+    async def toggle_amenity_status(self, amenity_id: str, session=None) -> Amenity:
         if not ObjectId.is_valid(amenity_id):
             raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
 
-        if not data:
-            raise AppException(status_code=400, message="No fields to update", error_code="NO_UPDATE_FIELDS", field="amenity")
-
-        self.timestamps(data, is_new=False)
-
-        result = await self.repository.update_by_id("amenities", amenity_id, data)
-
-        if result.matched_count == 0:
-            raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
-
-        updated = await self.get_amenity(amenity_id, storage)
-        return updated
-    
-    async def toggle_amenity_status(self, amenity_id: str) -> Amenity:
-        if not ObjectId.is_valid(amenity_id):
-            raise AppException(status_code=400, message="Invalid amenity id", error_code="INVALID_AMENITY_ID", field="amenity")
-
-        amenity = await self.repository.find_by_id("amenities", amenity_id)
+        amenity = await self.repository.find_by_id("amenities", amenity_id, session=session)
         if not amenity:
             raise AppException(status_code=404, message="Amenity not found", error_code="AMENITY_NOT_FOUND", field="amenity")
 
         new_status = not amenity.get("status", True)
         self.timestamps(amenity, is_new=False)
-        result = await self.repository.update_by_id("amenities", amenity_id, {"status": new_status})
+        result = await self.repository.update_by_id("amenities", amenity_id, {"status": new_status}, session=session)
 
         if result.matched_count == 0:
             raise AppException(status_code=404, message="Amenity not found during status toggle", error_code="AMENITY_NOT_FOUND_TOGGLE", field="amenity")
 
-        updated = await self.get_amenity(amenity_id)
+        updated = await self.get_amenity(amenity_id, session=session)
         return updated
     
     # Similar methods for facilities can be implemented here following the same pattern as amenities
     async def create_facility(
         self,
         data: Dict[str, str],
+        session=None,
         storage: Optional[StorageService] = None) -> str:
         
         # Here you would typically insert into the database and return the created object
@@ -530,3 +509,34 @@ class AttributeService(BaseService):
 
         updated = await self.get_room_type(room_type_id)
         return updated
+    
+
+
+    def _build_query_filters(self, search: dict | None) -> dict:
+
+        query = {}
+
+        if not search:
+            return query
+
+        for key, value in search.items():
+
+            if isinstance(value, dict):
+                query[key] = value
+
+            elif isinstance(value, str):
+
+                lv = value.strip().lower()
+
+                if lv in ("true", "false"):
+                    query[key] = lv == "true"
+                else:
+                    query[key] = {
+                        "$regex": value,
+                        "$options": "i"
+                    }
+
+            else:
+                query[key] = value
+
+        return query

@@ -4,6 +4,7 @@ from app.application.dto.city_query import CityQuery
 from app.application.dto.country_query import CountryQuery
 from app.application.dto.location_query import LocationQuery
 from app.serializers.city_serializer import CitySerializer
+from app.serializers.country_serializer import CountrySerializer
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from app.utils.slug_utils import generate_slug, validate_slug
@@ -102,9 +103,8 @@ class LocationService(BaseService):
         )
 
         updated = await self.repository.find_country_by_id(country_object_id, session=session)
-        if updated:
-            updated["id"] = str(updated.pop("_id"))
-        return updated
+        
+        return CountrySerializer.serialize(updated)
 
     async def toggle_country_status(self, country_id: str, updated_by: str, session=None):
         country_object_id = self._validate_country_id(country_id)
@@ -131,9 +131,8 @@ class LocationService(BaseService):
         )
 
         updated = await self.repository.find_country_by_id(country_object_id, session=session)
-        if updated:
-            updated["id"] = str(updated.pop("_id"))
-        return updated
+        
+        return CountrySerializer.serialize(updated)
 
     async def get_country(self, country_id: str, session=None):
         country_object_id = self._validate_country_id(country_id)

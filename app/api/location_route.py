@@ -136,7 +136,7 @@ class LocationController(BaseController):
         data: CountryUpdate,
         use_case: UpdateCountryUseCase = Depends(get_update_country_use_case),
     ):
-        country = await use_case.execute(country_id, data.model_dump())
+        country = await use_case.execute(country_id, data.model_dump(exclude_unset=True))
         if not country:
             raise HTTPException(status_code=404, detail="Country not found")
         

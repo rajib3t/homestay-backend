@@ -18,7 +18,7 @@ class CountrySerializer:
 
             "dial_code": country.get("dial_code", 1),
 
-            "status": country.get("status"),
+            "status": bool(country.get("status", True)), 
 
             "city_count": country.get("city_count", 0),
 

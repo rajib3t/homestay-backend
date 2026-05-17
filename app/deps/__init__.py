@@ -21,7 +21,7 @@ from app.deps.services import (
 # Use Cases
 from app.deps.use_cases import (
     get_create_user_use_case,
-    get_user_use_case,
+   
 )
 
 # Auth
@@ -41,7 +41,7 @@ __all__ = [
     "get_email_service",
     # Use Cases
     "get_create_user_use_case",
-    "get_user_use_case",
+    
     # Auth
     "get_current_user",
 ]

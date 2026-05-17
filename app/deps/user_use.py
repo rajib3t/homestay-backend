@@ -1,9 +1,14 @@
 from fastapi import Depends, Query
-from app.application.use_cases.user import GetUsersUseCase
+from app.application.use_cases.users.user import GetUserUseCase, GetUsersUseCase
 from app.deps.uow import get_uow
 from app.deps.auth import get_current_user
 from app.models.user_model import ListUsers
-
+from app.deps.services import (
+    get_address_service, 
+    get_company_service, 
+    get_user_service, 
+    get_storage_service
+)
 
 def get_list_params(
     page: int = Query(1, ge=1),
@@ -31,7 +36,7 @@ def get_list_params(
     )
 
 
-from app.deps.services import get_user_service, get_storage_service
+
 
 def get_list_users_use_case(
     user_service=Depends(get_user_service),
@@ -41,6 +46,23 @@ def get_list_users_use_case(
 ):
     return GetUsersUseCase(
         user_service=user_service,
+        storage_service=storage_service,
+        current_user=current_user,
+        uow=uow
+    )
+
+def get_single_user_use_case(
+    user_service=Depends(get_user_service),
+    company_service=Depends(get_company_service),
+    address_service=Depends(get_address_service),
+    storage_service=Depends(get_storage_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
+):
+    return GetUserUseCase(
+        user_service=user_service,
+        company_service=company_service,
+        address_service=address_service,
         storage_service=storage_service,
         current_user=current_user,
         uow=uow

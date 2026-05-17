@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from app.application.use_cases.users.get_user import GetUserUseCase
-from app.deps.use_cases import get_user_use_case
+from app.application.use_cases.users.user import GetUserUseCase
+from app.deps.user_use import get_single_user_use_case
 from app.schemas.user_schema import ProfileResponse
 from app.models.user_model import UserUpdate
 from app.services.user_service import UserService
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/profile", tags=["Profile"])
 async def get_profile(
     current_user: CurrentUser = Depends(get_current_user),
     
-    use_case: GetUserUseCase = Depends(get_user_use_case)
+    use_case: GetUserUseCase = Depends(get_single_user_use_case)
 ):
     user = await use_case.execute(current_user.id, include_company=False)
     return {

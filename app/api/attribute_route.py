@@ -4,9 +4,22 @@ from app.application.dto.facility import FacilityQuery
 from app.application.use_cases.attribute.amenity import CreateAmenityUseCase, GetAmenitiesUseCase, GetAmenityUseCase, UpdateAmenityUseCase
 from app.application.use_cases.attribute.bed_type import CreateBedTypeUseCase, GetBedTypeUseCase, GetBedTypesUseCase, UpdateBedTypeUseCase
 from app.application.use_cases.attribute.facility import CreateFacilityUseCase, GetFacilitiesUseCase, GetFacilityUseCase, UpdateFacilityUseCase
-from app.deps.attribute_use import get_create_amenity_use_case, get_create_bed_type_use_case, get_create_facility_use_case, get_list_amenities_use_case, get_list_bed_types_use_case, get_list_facilities_use_case, get_single_amenity_update_use_case, get_single_amenity_use_case, get_single_bed_type_update_use_case, get_single_bed_type_update_use_case, get_single_bed_type_use_case, get_single_facility_update_use_case, get_single_facility_use_case
+from app.deps.attribute_use import (
+    get_create_amenity_use_case, 
+    get_create_bed_type_use_case, 
+    get_create_facility_use_case, 
+    get_list_amenities_use_case, 
+    get_list_bed_types_use_case, 
+    get_list_facilities_use_case, 
+    get_single_amenity_update_use_case, 
+    get_single_amenity_use_case, 
+    get_single_bed_type_update_use_case, 
+    get_single_bed_type_update_use_case, 
+    get_single_bed_type_use_case, 
+    get_single_facility_update_use_case, 
+    get_single_facility_use_case
+)
 from app.middleware.idempotency_route import IdempotencyRoute
-from app.deps import get_attribute_service, get_storage_service, get_current_user
 from app.services.attribute_service import AttributeService
 from app.services.storage_service import StorageService
 from app.models.attribute_model import (
@@ -263,40 +276,3 @@ controller = AttributeController()
 router = controller.router
 
 
-@handle_api_exceptions
-async def update_amenity_status(
-    amenity_id: str,
-    status_data: UpdateAmenityStatus,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-):
-    return await controller.update_amenity_status(
-        amenity_id=amenity_id,
-        status_data=status_data,
-        service=attribute_service,
-    )
-
-
-@handle_api_exceptions
-async def update_facility_status(
-    facility_id: str,
-    status_data: UpdateFacilityStatus,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-):
-    return await controller.update_facility_status(
-        facility_id=facility_id,
-        status_data=status_data,
-        service=attribute_service,
-    )
-
-
-@handle_api_exceptions
-async def update_room_type_status(
-    room_type_id: str,
-    status_data: UpdateRoomTypeStatus,
-    attribute_service: AttributeService = Depends(get_attribute_service),
-):
-    return await controller.update_room_type_status(
-        room_type_id=room_type_id,
-        status_data=status_data,
-        service=attribute_service,
-    )

@@ -1,7 +1,7 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from app.application.use_cases.users.get_user import GetUserUseCase
+
 from app.application.use_cases.users.update_profile_image import UpdateUserProfileImageUseCase
 from app.application.use_cases.users.update_user import UpdateUserUseCase
 from app.deps.use_cases import get_update_profile_image_use_case, get_update_user_use_case
@@ -16,11 +16,11 @@ from app.services.address_service import AddressService
 from app.services.email_service import BaseEmailService
 from app.utils.api_utils import replace_data_url_asset
 from app.utils.exception_decorate import handle_api_exceptions
-from app.deps import get_storage_service, get_user_service,  get_current_user, get_create_user_use_case, get_user_use_case
+from app.deps import get_storage_service, get_user_service,  get_current_user, get_create_user_use_case
 from app.application.use_cases.users.create_user import CreateUserUseCase
 from app.deps.auth import CurrentUser
-from app.deps.user_use import get_list_users_use_case, get_list_params
-from app.application.use_cases.user import GetUsersUseCase
+from app.deps.user_use import get_list_users_use_case, get_list_params, get_single_user_use_case
+from app.application.use_cases.users.user import GetUsersUseCase, GetUserUseCase
 from app.application.dto.user import UserQuery
 
 import logging
@@ -98,10 +98,9 @@ class UserController(BaseController):
     async def get_user(
         self,
         user_id: str,
-        current_user: CurrentUser = Depends(get_current_user),
-        use_case: GetUserUseCase = Depends(get_user_use_case)
+        use_case: GetUserUseCase = Depends(get_single_user_use_case)
     ):
-        user = await use_case.execute(user_id, include_company=True)
+        user = await use_case.execute(user_id)
         return self.build_response("User", user)
     
 

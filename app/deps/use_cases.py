@@ -2,7 +2,7 @@
 from fastapi import Depends
 from app.application.use_cases.auth.login_user import LoginUserUseCase
 from app.application.use_cases.auth.refresh_token import RefreshTokenUseCase
-from app.application.use_cases.users.get_user import GetUserUseCase
+
 from app.application.use_cases.users.create_user import CreateUserUseCase
 from app.application.use_cases.users.update_user import UpdateUserUseCase
 from app.application.use_cases.locations.city import CreateCityUseCase
@@ -43,19 +43,7 @@ def get_create_user_use_case(
     )
 
 
-def get_user_use_case(
-    user_service=Depends(get_user_service),
-    company_service=Depends(get_company_service),
-    address_service=Depends(get_address_service),
-    storage_service=Depends(get_storage_service),
-):
-    """Get the get user use case."""
-    return GetUserUseCase(
-        user_service,
-        company_service,
-        address_service,
-        storage_service,
-    )
+
 
 def get_update_user_use_case(
     user_service=Depends(get_user_service),

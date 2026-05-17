@@ -22,13 +22,13 @@ class CityList(ListRequest):
     country: Optional[str] = None
     is_popular: Optional[bool] = None
     slug: Optional[str] = None
-    _allowed_sort_fields = ['name', 'country', 'slug']
+    allowed_sort_fields: ClassVar[Sequence[str]] = ['name', 'country', 'slug', 'created_at']
 
 class LocationList(ListRequest):
     name: Optional[str] = None 
     city: Optional[str] = None
     country: Optional[str] = None
-    _allowed_sort_fields = ['name', 'city', 'country']
+    allowed_sort_fields: ClassVar[Sequence[str]] = ['name', 'city', 'country', 'created_at']
 
 class CountryCreate(BaseModel):
     name: str

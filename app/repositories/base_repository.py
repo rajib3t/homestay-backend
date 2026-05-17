@@ -57,3 +57,6 @@ class BaseRepository:
                 error_code="INVALID_PAGINATION",
                 field="pagination",
             )
+        
+    
+    

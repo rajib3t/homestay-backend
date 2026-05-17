@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
+from app.application.dto.user import UserQuery
 from app.schemas.user_schema import UserData
+from app.serializers.user_serializer import UserSerializer
 from app.services.base_service import BaseService
 from app.core.exceptions import AppException
 from app.core.security import PasswordHasher
@@ -220,3 +222,40 @@ class UserService(BaseService):
                 user["id"] = str(user.pop("_id"))
 
             return user
+    
+
+
+    async def list_users(
+        self,
+        query: UserQuery,
+        session=None
+    ) :
+        await self.validate_pagination(query.page, query.size)
+        filters = await self.build_query_filters(query.filters)
+        skip = (query.page - 1) * query.size
+        sort_direction = 1 if query.sort_order.lower() == "asc" else -1
+        self.user_serializer = UserSerializer()
+
+        cursor = (
+                self.repository
+                .find_many(filters, session=session)
+                .sort(query.sort_by, sort_direction)
+                .skip(skip)
+                .limit(query.size)
+            )
+        
+
+        
+        total = await self.repository.count_documents( filters, session=session)
+        items = []
+        async for doc in cursor:
+            items.append(self.user_serializer.serialize(doc))
+        
+        return {
+            "total": total,
+            "page": query.page,
+            "size": query.size,
+            "items": items
+        }
+
+        

@@ -18,7 +18,7 @@ class UserBase(BaseModel):
     updated_at: Optional[datetime] = None
 
 class UserData(UserBase):
-    id: str = Field(..., alias="_id")
+    id: str 
 
     model_config = ConfigDict(populate_by_name=True)
 

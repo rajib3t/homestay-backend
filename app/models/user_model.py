@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from typing import Optional, List
 from enum import Enum
 import re
-from typing import ClassVar
+from typing import ClassVar, Sequence
 from app.models.request import ListRequest
 from app.models.company_model import CompanyUpdate
 
@@ -111,33 +111,11 @@ class UserPasswordUpdate(BaseSchema):
 
 
 class ListUsers(ListRequest):
-    sort_by: Optional[str] = Field(default="first_name")
-
-    username: Optional[str] = None
+   
     email: Optional[EmailStr] = None
     user_type: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     mobile: Optional[str] = None
 
-    _allowed_sort_fields: ClassVar[List[str]] = [
-        "username",
-        "email",
-        "user_type",
-        "first_name",
-        "last_name",
-        "mobile",
-    ]
-
-    @field_validator("sort_by", mode="before")
-    @classmethod
-    def normalize_sort_by(cls, value):
-        if value == "name":
-            value = "first_name"
-
-        if value not in cls._allowed_sort_fields:
-            raise ValueError(
-                f"Invalid sort field. Allowed: {cls._allowed_sort_fields}"
-            )
-
-        return value
+    allowed_sort_fields: ClassVar[Sequence[str]] = ['email', 'user_type', 'first_name', 'last_name', 'mobile', 'created_at']

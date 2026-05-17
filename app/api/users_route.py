@@ -19,6 +19,10 @@ from app.utils.exception_decorate import handle_api_exceptions
 from app.deps import get_storage_service, get_user_service,  get_current_user, get_create_user_use_case, get_user_use_case
 from app.application.use_cases.users.create_user import CreateUserUseCase
 from app.deps.auth import CurrentUser
+from app.deps.user_use import get_list_users_use_case, get_list_params
+from app.application.use_cases.user import GetUsersUseCase
+from app.application.dto.user import UserQuery
+
 import logging
 def _pagination_meta(r):
     return {"total": r["total"], "page": r["page"], "size": r["size"]}
@@ -66,25 +70,26 @@ class UserController(BaseController):
     @handle_api_exceptions
     async def list_users(
         self,
-        params:  ListUsers= Depends(),
-        current_user: CurrentUser = Depends(get_current_user),
-        service: UserService = Depends(get_user_service),
+        params:  ListUsers= Depends(get_list_params),
+        use_case : GetUsersUseCase= Depends(get_list_users_use_case)
         
     ):
         search = self.build_search(
-            username=params.username,
+            
             email=params.email,
             user_type=params.user_type,
             first_name=params.first_name,
             last_name=params.last_name,
             mobile=params.mobile
         )
-        result = await service.get_users(
-            page=params.page,
-            size=params.size,
-            sort_by=params.sort_by,
-            sort_order=params.sort_order,
-            search=search,
+        result = await use_case.execute(
+            UserQuery(
+                page=params.page,
+                size=params.size,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                filters=search,
+            )
             
         )
         return self.build_response("Users list", data=result["items"], meta=_pagination_meta(result))

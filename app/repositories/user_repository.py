@@ -58,12 +58,7 @@ class UserRepository(BaseRepository):
             session=session
         )
 
-    async def find_many(self, query: dict, session=None):
-        cursor = self.collection.find(query, session=session)
-        return await cursor.to_list(length=None)
-
-    async def count_documents(self, query: dict, session=None):
-        return await self.collection.count_documents(query, session=session)
+    
 
     async def get_vendor_users(self, session=None):
         cursor = self.collection.find({"role": "vendor"}, session=session)
@@ -101,3 +96,15 @@ class UserRepository(BaseRepository):
             return "MOBILE_EXISTS"
 
         return "DUPLICATE_KEY"
+    
+    async def aggregate(self, pipeline: list, session=None):
+        return self.collection.aggregate(pipeline, session=session)
+    
+    def find_many(self,  query: dict, session=None):
+        return self.collection.find(
+            query,
+            session=session
+        )
+
+    async def count_documents(self, query: dict, session=None):
+        return await self.collection.count_documents(query, session=session)

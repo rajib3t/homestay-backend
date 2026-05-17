@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, ClassVar, Sequence
 
 from app.models.request import ListRequest
 
@@ -12,7 +12,7 @@ class CreateAmenity(BaseModel):
 class ListAmenities(ListRequest):
     name: Optional[str] = None
     status: Optional[bool] = None
-    _allowed_sort_fields = ['name', 'status']
+    allowed_sort_fields: ClassVar[Sequence[str]] = ['name', 'status', 'created_at']
     
 
 class UpdateAmenity(BaseModel):
@@ -31,7 +31,7 @@ class CreateFacility(BaseModel):
 class ListFacilities(ListRequest):
     name: Optional[str] = None
     status: Optional[bool] = None
-    _allowed_sort_fields = ['name', 'status']
+    allowed_sort_fields: ClassVar[Sequence[str]] = ['name', 'status', 'created_at']
 
 class UpdateFacility(BaseModel):
     name: Optional[str] = None
@@ -50,7 +50,7 @@ class ListRoomTypes(ListRequest):
     name: Optional[str] = None
     capacity: Optional[int] = None
     status: Optional[bool] = None
-    _allowed_sort_fields = ['name', 'capacity', 'status']
+    allowed_sort_fields: ClassVar[Sequence[str]] = ['name', 'capacity', 'status', 'created_at']
 
 class UpdateRoomType(BaseModel):
     name: Optional[str] = None

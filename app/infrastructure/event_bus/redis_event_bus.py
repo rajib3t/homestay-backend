@@ -1,8 +1,8 @@
 # app/infrastructure/event_bus/redis_event_bus.py
 
-import json
 import logging
 
+from app.core.json_utils import dumps as json_dumps
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class RedisEventBus:
 
         await self.redis.lpush(
             self.queue_name,
-            json.dumps(payload)
+            json_dumps(payload)
         )
 
         logger.info(

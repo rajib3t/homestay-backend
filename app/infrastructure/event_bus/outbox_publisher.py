@@ -1,9 +1,9 @@
 # app/infrastructure/event_bus/outbox_publisher.py
 
-import json
 import asyncio
 import logging
 
+from app.core.json_utils import dumps as json_dumps
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class OutboxPublisher:
 
                 await self.redis.lpush(
                     "event_queue",
-                    json.dumps(payload)
+                    json_dumps(payload)
                 )
 
                 # -----------------------------------------

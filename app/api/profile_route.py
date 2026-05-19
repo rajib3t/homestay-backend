@@ -16,7 +16,7 @@ async def get_profile(
     
     use_case: GetUserUseCase = Depends(get_single_user_use_case)
 ):
-    user = await use_case.execute(current_user.id, include_company=False)
+    user = await use_case.execute(current_user.id)
     return {
         "status": "success",
         "message": "Profile data retrieved",

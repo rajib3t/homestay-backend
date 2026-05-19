@@ -16,15 +16,9 @@ class UserImageService:
             )
         )
 
-        key = f"user/{path}.webp"
-
-        await self.storage_service.convert_and_upload_webp(
-                key=key,
-                data=image_bytes,
-                quality=90,
-            )
+        key = path
         
-        return key
+        return await self.storage_service.convert_and_upload_webp(key, image_bytes)
     
     def resolve_url(self, image_key: str):
 

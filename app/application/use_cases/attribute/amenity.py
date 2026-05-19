@@ -204,14 +204,14 @@ class UpdateAmenityUseCase(BaseUseCase):
                     ).strip("-")
                     upload_path = f"attribute/amenities/{slug}.webp"
 
-                # Delete the old file first; log but don't abort on failure
+                # If there's an existing image, delete it from storage
                 if existing_key:
-                    deleted = await self.image_service.delete(existing_key)
-                    if not deleted:
-                        logger.warning(
-                            f"Could not delete previous icon for amenity "
-                            f"{amenity_id}: {existing_key}"
-                        )
+                    try:
+                        await self.image_service.delete(existing_key)
+                        logger.info(f"Deleted old icon from storage: {existing_key}")
+                    except Exception as e:
+                        logger.error(f"Error deleting old icon: {e}")
+                        # Continue with the update even if deletion fails
 
                 # Upload to the same path — overwrites at the storage level
                 image_key = await self.image_service.upload(

@@ -4,6 +4,7 @@ import json
 import asyncio
 import logging
 
+from app.core.json_utils import dumps as json_dumps
 from app.core.redis import get_redis
 from app.core.database import get_database
 from app.repositories.outbox_repository import OutboxRepository
@@ -152,7 +153,7 @@ async def handle_failure(redis, raw, payload):
 
         await redis.lpush(
             "event_dlq",
-            json.dumps(payload)
+            json_dumps(payload)
         )
 
     else:
@@ -163,7 +164,7 @@ async def handle_failure(redis, raw, payload):
 
         await redis.lpush(
             "event_queue",
-            json.dumps(payload)
+            json_dumps(payload)
         )
 
 

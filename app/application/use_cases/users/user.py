@@ -16,7 +16,8 @@ class UserResponseBuilder:
         self.company_service = company_service
         self.address_service = address_service
         self.image_service = UserImageService(self.storage_service)
-    def build_user_response(self, user_data: dict) -> dict:
+
+    async def build_user_response(self, user_data: dict) -> dict:
         if not user_data:
             return None
 
@@ -29,23 +30,12 @@ class UserResponseBuilder:
             except Exception as e:
                 logger.error(f"Error generating presigned URL for user image: {e}")
                 result["image"] = None  # Explicitly set to None if URL generation fails
-        
-        company = result.get("company")
-        if company:
-            company = company.copy()
-            if "_id" in company:
-                company["id"] = str(company.pop("_id"))
 
-            address = company.get("address")
-            if address:
-                address = address.copy()
-                if "_id" in address:
-                    address["id"] = str(address.pop("_id"))
-                address.pop("company_id", None)
-                address.pop("user_id", None)
-                company["address"] = address
+        try:
+            result["company"] = await self.company_service.get_company_by_user_id(result["id"])
+        except Exception:
+            pass
 
-            result["company"] = company
         return result
 class GetUsersUseCase(BaseUseCase):
     def __init__(self, user_service, company_service, address_service, storage_service, current_user, uow):
@@ -61,7 +51,7 @@ class GetUsersUseCase(BaseUseCase):
             session = uow.get_session()
             result = await self.user_service.list_users(query, session=session)
             result["items"] = [
-                self.response_builder.build_user_response(user)
+                await self.response_builder.build_user_response(user)
                 for user in result["items"]
             ]
             return result
@@ -91,8 +81,8 @@ class GetUserUseCase(BaseUseCase):
             user = await self.user_service.get_user(user_id, session=session)
 
             
-
-        return self.response_builder.build_user_response(user) 
+            
+            return await self.response_builder.build_user_response(user)
     
 class UpdateUserProfileImageUseCase(BaseUseCase):
     def __init__(
@@ -146,7 +136,7 @@ class UpdateUserProfileImageUseCase(BaseUseCase):
                     await self.user_service.update_user(user_id, {"image": image_key}, session=session)
                     uow.collect_event(UserUpdatedEvent(user_id, actor_id))
                     updated_user = await self.user_service.get_user(user_id, session=session)
-                    return self.response_builder.build_user_response(updated_user)      
+                    return await self.response_builder.build_user_response(updated_user)
                 
 class UpdateUserUseCase(BaseUseCase):
 
@@ -218,8 +208,8 @@ class UpdateUserUseCase(BaseUseCase):
             uow.collect_event(UserUpdatedEvent(user_id, actor_id))
 
         # --- STEP 4: Build Response (outside transaction; do not reuse ended session) ---
-        updated_user = await self._build_updated_user_response(user_id)
-        return self.response_builder.build_user_response(updated_user)
+        updated_user = await self.user_service.get_user(user_id)
+        return await self.response_builder.build_user_response(updated_user)
 
     async def _build_updated_user_response(self, user_id: str) -> dict:
         user = await self.user_service.get_user(user_id)
@@ -300,3 +290,25 @@ class UpdateUserUseCase(BaseUseCase):
                 },
                 session=session
             )
+
+class UpdateUserPasswordUseCase(BaseUseCase):
+    def __init__(self, user_service, storage_service, company_service, address_service, current_user, uow):
+        self.user_service = user_service
+        self.storage_service = storage_service
+        self.company_service = company_service
+        self.address_service = address_service
+        self.current_user = current_user
+        self.uow = uow
+        self.response_builder = UserResponseBuilder(self.storage_service, self.company_service, self.address_service)
+    async def execute(self, user_id: str, password: str):
+        async with self.uow as uow:
+            session = uow.get_session()
+            user = await self.user_service.get_user(user_id, session=session)
+            
+            update_data = {
+                "password": password    
+            }
+            await self.user_service.update_user(user_id, update_data, session=session)
+            uow.collect_event(UserUpdatedEvent(user_id, str(self.current_user.id)))
+            updated_user = await self.user_service.get_user(user_id, session=session)
+            return await self.response_builder.build_user_response(updated_user)

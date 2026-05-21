@@ -3,7 +3,8 @@ from app.application.use_cases.users.user import (
     GetUserUseCase, 
     GetUsersUseCase, 
     UpdateUserProfileImageUseCase,
-    UpdateUserUseCase
+    UpdateUserUseCase,
+    UpdateUserPasswordUseCase
 )
 from app.deps.uow import get_uow
 from app.deps.auth import get_current_user
@@ -108,6 +109,24 @@ def get_update_user_use_case(
         company_service=company_service,
         address_service=address_service,
         storage_service=storage_service,
+        current_user=current_user,
+        uow=uow
+    )
+
+
+def get_update_user_password_use_case(
+    user_service=Depends(get_user_service),
+    storage_service=Depends(get_storage_service),
+    company_service=Depends(get_company_service),
+    address_service=Depends(get_address_service),
+    current_user=Depends(get_current_user),
+    uow=Depends(get_uow)
+):
+    return UpdateUserPasswordUseCase(
+        user_service=user_service,
+        storage_service=storage_service,
+        company_service=company_service,    
+        address_service=address_service,
         current_user=current_user,
         uow=uow
     )

@@ -1,23 +1,11 @@
-
-
 from fastapi import APIRouter, Depends
-
-
-
-
-
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.api.base_controller import BaseController
 from app.models.user_model import ListUsers, UserCreate, UserPasswordUpdate, UserProfileImageUpdate, UserUpdate
 from app.schemas.user_schema import ProfileResponse, UsersResponse, UserResponse
-from app.services.storage_service import StorageService
-from app.services.user_service import UserService
-from app.services.company_service import CompanyService
-from app.services.address_service import AddressService
-from app.services.email_service import BaseEmailService
-from app.utils.api_utils import replace_data_url_asset
+
 from app.utils.exception_decorate import handle_api_exceptions
-from app.deps import get_storage_service, get_user_service,  get_current_user, get_create_user_use_case
+from app.deps import  get_current_user, get_create_user_use_case
 from app.application.use_cases.users.create_user import CreateUserUseCase
 from app.deps.auth import CurrentUser
 from app.deps.user_use import (
@@ -25,13 +13,15 @@ from app.deps.user_use import (
     get_list_params, 
     get_single_user_use_case,
     get_update_profile_image_use_case,
-    get_update_user_use_case
+    get_update_user_use_case,
+    get_update_user_password_use_case
     )
 from app.application.use_cases.users.user import (
     GetUsersUseCase, 
     GetUserUseCase, 
     UpdateUserUseCase, 
-    UpdateUserProfileImageUseCase
+    UpdateUserProfileImageUseCase,
+    UpdateUserPasswordUseCase
     )
 from app.application.dto.user import UserQuery
 
@@ -131,13 +121,10 @@ class UserController(BaseController):
         self,
         user_id: str,
         data: UserPasswordUpdate,
-        current_user: CurrentUser = Depends(get_current_user),
-        service: UserService = Depends(get_user_service),
-        storage_service: StorageService = Depends(get_storage_service),
+        use_case: UpdateUserPasswordUseCase = Depends(get_update_user_password_use_case)
     ):
-        await service.update_user(user_id, {"password": data.new_password})
-        user_data = await service.get_user(user_id, storage=storage_service)
-        return self.build_response("Password updated", user_data)
+        result = await use_case.execute(user_id, data.new_password)
+        return self.build_response("Password updated", result)
        
     @handle_api_exceptions
     async def update_user(

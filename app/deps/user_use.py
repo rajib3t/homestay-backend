@@ -7,7 +7,8 @@ from app.application.use_cases.users.user import (
     UpdateUserPasswordUseCase
 )
 from app.deps.uow import get_uow
-from app.deps.auth import get_current_user
+from app.deps.auth import CurrentUser, get_current_user
+from app.infrastructure.uow.mongo_uow import MongoUnitOfWork
 from app.models.user_model import ListUsers
 from app.deps.services import (
     get_address_service, 
@@ -15,6 +16,10 @@ from app.deps.services import (
     get_user_service, 
     get_storage_service
 )
+from app.services.address_service import AddressService
+from app.services.company_service import CompanyService
+from app.services.storage_service import StorageService
+from app.services.user_service import UserService
 
 def get_list_params(
     page: int = Query(1, ge=1),
@@ -45,12 +50,12 @@ def get_list_params(
 
 
 def get_list_users_use_case(
-    user_service=Depends(get_user_service),
-    company_service=Depends(get_company_service),
-    address_service=Depends(get_address_service),
-    storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
-    uow=Depends(get_uow)
+    user_service : UserService=Depends(get_user_service),
+    company_service : CompanyService=Depends(get_company_service),
+    address_service : AddressService =Depends(get_address_service),
+    storage_service : StorageService=Depends(get_storage_service),
+    current_user : CurrentUser=Depends(get_current_user),
+    uow : MongoUnitOfWork=Depends(get_uow)
 ):
     return GetUsersUseCase(
         user_service=user_service,

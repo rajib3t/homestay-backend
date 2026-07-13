@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     S3_SECRET_KEY: Optional[str] = None
     S3_BUCKET: Optional[str] = None
     S3_USE_SSL: bool = True
+
+
+
+
+    # Default File Upload Settings
+    MAX_FILE_SIZE_MB: int = 5  # Maximum file size in MB
+    ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

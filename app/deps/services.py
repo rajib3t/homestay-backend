@@ -17,7 +17,8 @@ from app.repositories.location_repository import LocationRepository
 from app.repositories.redis_token_repository import RedisTokenRepository
 from app.repositories.token_repository import TokenRepository
 from app.repositories.user_repository import UserRepository
-
+from app.services.app_setting_service import AppSettingService
+from app.repositories.app_setting_repository import AppSettingRepository
 
 def get_user_service(db=Depends(get_database)):
     """Get the user service with its dependencies."""
@@ -54,6 +55,16 @@ def get_attribute_service(db=Depends(get_database)):
     """Get the attribute service."""
     return AttributeService(AttributeRepository(db))
 
+def get_app_setting_service(db=Depends(get_database)):
+    return AppSettingService(AppSettingRepository(db))
+
+async def get_property_service(db=Depends(get_database)):
+    """Get the property service."""
+    from app.repositories.property_repository import PropertyRepository
+    from app.services.property_service import PropertyService
+
+    property_repo = PropertyRepository(db)
+    return PropertyService(property_repo)
 
 def get_token_service(db=Depends(get_database)):
     """Get the token service with appropriate repository (Redis or DB)."""

@@ -46,7 +46,7 @@ class UserService(BaseService):
         return user
 
     async def create_user(self, user_data: dict, session=None):
-        existing = await self.repository.find_user_conflict(user_data["username"], user_data["email"], user_data["mobile"], session=session)
+        existing = await self.repository.find_user_conflict(user_data["username"].lower(), user_data["email"].lower(), user_data["mobile"].lower(), session=session)
 
         if existing:
             if existing.get("username") == user_data["username"]:
@@ -122,7 +122,7 @@ class UserService(BaseService):
         # Unique email check
         if "email" in update_data:
             existing = await self.repository.find_by_email_excluding_id(
-                update_data["email"], user_id
+                update_data["email"].lower(), user_id
             )
             if existing:
                 raise AppException(400, "Email already exists")

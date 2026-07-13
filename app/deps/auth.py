@@ -2,14 +2,15 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from fastapi import Request
+from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.security import JWTHandler
 from app.core.exceptions import AppException, TokenExpiredError, TokenInvalidError
 
 logger = logging.getLogger(__name__)
 
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
-
+security = HTTPBearer(auto_error=False)
 
 @dataclass
 class CurrentUser:
@@ -17,15 +18,20 @@ class CurrentUser:
     user_type: str  # was: role
 
 
-def _extract_token(request: Request) -> Optional[str]:
-    """Extract a bearer token from the Authorization header or cookie."""
-    auth = request.headers.get("Authorization")
-    if auth and auth.lower().startswith("bearer "):
-        return auth.split(" ", 1)[1]
+def _extract_token(
+    credentials: HTTPAuthorizationCredentials | None,
+    request: Request,
+) -> str | None:
+    if credentials:
+        return credentials.credentials
+
     return request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
 
 
-def get_current_user(request: Request) -> CurrentUser:
+def get_current_user(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    ) -> CurrentUser:
     """Dependency that returns the current user from an access token.
 
     Accepts `Authorization: Bearer <token>` or cookie `access_token`.
@@ -33,7 +39,7 @@ def get_current_user(request: Request) -> CurrentUser:
     Raises:
         AppException(401): If token is missing, invalid, expired, or lacks required claims.
     """
-    token = _extract_token(request)
+    token = _extract_token(credentials, request)
 
     if not token:
         logger.warning("Auth failure [%s]: no token provided", request.url.path)
@@ -71,3 +77,5 @@ def get_current_user(request: Request) -> CurrentUser:
         raise AppException(401, "Token missing role claim", error_code="TOKEN_MISSING_ROLE")
 
     return CurrentUser(id=sub, user_type=role)
+
+

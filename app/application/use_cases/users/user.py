@@ -3,9 +3,14 @@ import logging
 from app.application.dto.user import UserQuery
 from app.application.use_cases.base_use_case import BaseUseCase
 from app.application.use_cases.users.image_service import UserImageService
+from app.deps.auth import CurrentUser
 from app.domain.events.user_events import UserUpdatedEvent
 import re
 from app.models.user_model import UserUpdate
+from app.services.address_service import AddressService
+from app.services.company_service import CompanyService
+from app.services.storage_service import StorageService
+from app.services.user_service import UserService
 logger = logging.getLogger(__name__)
 from app.core.exceptions import AppException
 
@@ -38,7 +43,15 @@ class UserResponseBuilder:
 
         return result
 class GetUsersUseCase(BaseUseCase):
-    def __init__(self, user_service, company_service, address_service, storage_service, current_user, uow):
+    def __init__(
+            self, 
+            user_service : UserService, 
+            company_service :CompanyService, 
+            address_service : AddressService, 
+            storage_service : StorageService, 
+            current_user : CurrentUser, 
+            uow
+        ):
         self.user_service = user_service
         self.company_service = company_service
         self.address_service = address_service
@@ -106,7 +119,7 @@ class UpdateUserProfileImageUseCase(BaseUseCase):
 
     async def execute(self, user_id: str, image: str):
             actor_id = str(self.current_user.id)
-
+            logger.info('Image', image)
             async with self.uow as uow:
                 session = uow.get_session()
                 user = await self.user_service.get_user(user_id, session=session)
@@ -142,7 +155,7 @@ class UpdateUserUseCase(BaseUseCase):
 
     def __init__(
         self,
-        user_service,
+        user_service : UserService,
         company_service,
         address_service,
         storage_service,

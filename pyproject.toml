@@ -26,4 +26,5 @@ dependencies = [
     "ruff>=0.15.4",
     "uvicorn>=0.39.0",
     "rq>=2.8.0",
+    "maturin>=1.14.0",
 ]

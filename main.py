@@ -16,7 +16,7 @@ import asyncio
 from app.core.config import settings  # however you expose settings
 class Application:
     def __init__(self) -> None:
-        self.app = FastAPI(lifespan=self._lifespan)
+        self.app = FastAPI(lifespan=self._lifespan, title="API", description="API for the application", version="1.0.0")
 
         self._register_middleware()
         self._register_exception_handlers()

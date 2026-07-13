@@ -12,7 +12,7 @@ def handle_api_exceptions(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
-
+        
         except AppException:
             raise
 

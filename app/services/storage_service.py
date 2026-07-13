@@ -7,6 +7,7 @@ from PIL import Image
 import base64
 import re
 from app.core.config import settings
+from app.core.exceptions import AppException
 
 
 class StorageService:
@@ -132,10 +133,12 @@ class StorageService:
 
         return await self.upload_bytes(webp_key, webp_bytes, content_type="image/webp")
 
+    
 
     async def _dd_to_dms_xmp(self, value: float, axis: str) -> str:
         """Convert decimal degrees to XMP DMS rational string: 'DD,MM.mmmmmmS'."""
         value = abs(value)
+
         degrees = int(value)
         minutes = (value - degrees) * 60
         return f"{degrees},{minutes:.6f}"
@@ -157,14 +160,23 @@ class StorageService:
         """
 
         if not base64_string:
-            raise ValueError("Base64 image is empty")
-
+            raise AppException(
+                    status_code=400,
+                    message="Image is not valid format",
+                    error_code="INVALID_IMAGE",
+                    field="username"
+        )
         pattern = r"^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$"
 
         match = re.match(pattern, base64_string)
 
         if not match:
-            raise ValueError("Invalid base64 image format")
+            raise AppException(
+                    status_code=400,
+                    message="Image is not valid format",
+                    error_code="INVALID_IMAGE",
+                    field="username"
+        )
 
         mime_type = match.group(1)
         encoded = match.group(2)

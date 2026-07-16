@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import asdict
 import logging
+import mimetypes
 from typing import Any, Optional
 
 from pydantic import BaseModel as PydanticBaseModel
@@ -13,6 +14,8 @@ from app.infrastructure.uow.mongo_uow import MongoUnitOfWork
 from app.services.property_service import PropertyService
 from app.services.storage_service import StorageService
 from app.models.property_model import Property
+from app.core.exceptions import AppException
+from app.utils.file_validation import validate_data_url_file
 
 logger = logging.getLogger(__name__)
 
@@ -45,19 +48,42 @@ class CreatePropertyUseCase(BaseUseCase):
 
         return serialized_items
 
-    async def _upload_image(self, image_data: str, folder: str, file_name: Optional[str] = None) -> Optional[str]:
+    async def _upload_image(
+        self,
+        image_data: str,
+        folder: str,
+        file_name: Optional[str] = None,
+        *,
+        allowed_prefixes: tuple[str, ...] = ("image/",),
+    ) -> Optional[str]:
         if not image_data or not isinstance(image_data, str) or not image_data.strip():
             return None
 
-        try:
-            image_bytes, _ = await self.storage_service.convert_base64_to_bytes(image_data)
-            key = f"{folder}/{file_name or uuid.uuid4().hex}.webp"
+        image_data = image_data.strip()
 
-            return await self.storage_service.convert_and_upload_webp(
-                key=key,
-                data=image_bytes,
-                quality=90,
-            )
+        if image_data.startswith(("http://", "https://")):
+            return image_data
+
+        if not image_data.startswith("data:"):
+            return image_data
+
+        try:
+            file_data = validate_data_url_file(image_data, allowed_prefixes=allowed_prefixes)
+            image_bytes = file_data.raw
+            mime_type = file_data.mime_type
+
+            if mime_type.startswith("image/"):
+                key = f"{folder}/{file_name or uuid.uuid4().hex}.webp"
+                return await self.storage_service.convert_and_upload_webp(
+                    key=key,
+                    data=image_bytes,
+                    quality=90,
+                )
+
+            key = f"{folder}/{file_name or uuid.uuid4().hex}{file_data.extension}"
+            return await self.storage_service.upload_bytes(key, image_bytes, content_type=mime_type)
+        except AppException:
+            raise
         except Exception as e:
             logger.warning(f"Failed to upload image for {folder}/{file_name}: {str(e)}")
             return None
@@ -83,6 +109,7 @@ class CreatePropertyUseCase(BaseUseCase):
                 property_data.trade_license,
                 folder="property_images",
                 file_name=f"trade-license-{uuid.uuid4().hex}",
+                allowed_prefixes=("image/", "application/pdf"),
             )
 
             gallery_images = []

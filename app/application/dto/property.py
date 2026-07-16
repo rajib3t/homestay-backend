@@ -1,7 +1,9 @@
 from typing import Dict, List, Optional
 
 from attrs import field
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.core.exceptions import AppException
 
 
 
@@ -73,6 +75,20 @@ class PropertyDTO(BaseModel):
     # Tax
     tax_name: Optional[str] = None
     tax_percentage: Optional[float] = None
+
+    @field_validator("listing_price", "sale_price")
+    @classmethod
+    def validate_non_negative_price(cls, value):
+        if value is not None and value < 0:
+            raise AppException(status_code=400, message="Price values must be non-negative", error_code="INVALID_PRICE")
+        return value
+
+    @model_validator(mode="after")
+    def validate_sale_price(self):
+        if self.listing_price is not None and self.sale_price is not None:
+            if self.sale_price > self.listing_price:
+                raise AppException(status_code=400, message="sale_price cannot be greater than listing_price", error_code="INVALID_PRICE")
+        return self
     
     @field_validator('*', mode='before')
     @classmethod

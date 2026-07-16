@@ -4,10 +4,9 @@ import boto3
 from aioboto3 import Session
 from botocore.exceptions import ClientError
 from PIL import Image
-import base64
-import re
 from app.core.config import settings
 from app.core.exceptions import AppException
+from app.utils.file_validation import validate_data_url_file
 
 
 class StorageService:
@@ -154,36 +153,11 @@ class StorageService:
         data:image/webp;base64,...
         data:image/png;base64,...
         data:image/jpeg;base64,...
+        data:application/pdf;base64,...
 
         Returns:
             (image_bytes, mime_type)
         """
 
-        if not base64_string:
-            raise AppException(
-                    status_code=400,
-                    message="Image is not valid format",
-                    error_code="INVALID_IMAGE",
-                    field="username"
-        )
-        pattern = r"^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$"
-
-        match = re.match(pattern, base64_string)
-
-        if not match:
-            raise AppException(
-                    status_code=400,
-                    message="Image is not valid format",
-                    error_code="INVALID_IMAGE",
-                    field="username"
-        )
-
-        mime_type = match.group(1)
-        encoded = match.group(2)
-
-        try:
-            image_bytes = base64.b64decode(encoded)
-        except Exception as exc:
-            raise ValueError(f"Cannot decode base64 image: {exc}") from exc
-
-        return image_bytes, mime_type
+        file_data = validate_data_url_file(base64_string)
+        return file_data.raw, file_data.mime_type

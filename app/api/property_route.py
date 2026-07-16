@@ -11,7 +11,13 @@ from app.application.dto.property import (
 from app.application.use_cases.property.create_property_use_case import CreatePropertyUseCase
 from app.application.use_cases.property.get_properties_use_case import GetPropertiesUseCase
 from app.application.use_cases.property.get_property_use_case import GetPropertyUseCase
-from app.deps.property import get_property_create_use_case, get_property_list_use_case, get_property_use_case
+from app.application.use_cases.property.update_property_use_case import UpdatePropertyUseCase
+from app.deps.property import (
+    get_property_create_use_case,
+    get_property_list_use_case,
+    get_property_update_use_case,
+    get_property_use_case,
+)
 from app.middleware.idempotency_route import IdempotencyRoute
 from app.schemas.property_schema import CreatePropertyResponseSchema, PropertyListResponseSchema, PropertySchema
 from app.utils.exception_decorate import handle_api_exceptions
@@ -65,6 +71,16 @@ class PropertyController(BaseController):
                     "status_code": 200,
                 },
             ),
+            (
+                "patch",
+                "/{property_id}",
+                self._update_property,
+                {
+                    "response_model": dict,
+                    "response_model_by_alias": False,
+                    "status_code": 200,
+                },
+            ),
         ]
 
         for method, path, handler, route_kwargs in routes:
@@ -94,6 +110,20 @@ class PropertyController(BaseController):
         return self.build_response(
             "Property retrieved successfully",
             data=property_data,
+        )
+
+    @handle_api_exceptions
+    async def _update_property(
+        self,
+        property_id: str,
+        data: PropertyDTO,
+        use_case: UpdatePropertyUseCase = Depends(get_property_update_use_case),
+    ):
+        await use_case.execute(property_id, data)
+
+        return self.build_response(
+            "Property updated successfully",
+            data={"id": property_id},
         )
     
     async def _get_properties(

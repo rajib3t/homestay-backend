@@ -1,5 +1,6 @@
 
 from decimal import Decimal
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -65,8 +66,8 @@ class Property(BaseModel):
     tax_name: Optional[str] = None
     tax_percentage: Optional[float] = None
 
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     created_by: Optional[str] = None
     updated_by: Optional[str] = None

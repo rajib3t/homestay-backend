@@ -1,3 +1,5 @@
+from typing import Optional
+
 from bson import ObjectId
 
 from app.application.dto.property import PropertyQuery
@@ -69,3 +71,17 @@ class PropertyRepository(BaseRepository):
             "page": query.page,
             "size": query.size,
         }
+    
+    async def update_property(self, property_id: str, data: dict, session=None) -> Optional[Property]:
+        try:
+            object_id = ObjectId(property_id)
+        except Exception:
+            return None
+
+        result = await self.collection().update_one(
+            {"_id": object_id},
+            {"$set": data},
+            session=session
+        )
+
+        return result

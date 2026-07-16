@@ -1,7 +1,8 @@
 
+from decimal import Decimal
 from typing import List, Optional
 
-from pydantic.v1 import BaseModel
+from pydantic import BaseModel
 
 
 class Amenity(BaseModel):
@@ -19,6 +20,13 @@ class Room(BaseModel):
     name: str
     type: str
 
+class FoodOption(BaseModel):
+    name: str
+    allow: bool = True
+
+
+
+    
 class Property(BaseModel):
     
     name: str
@@ -37,11 +45,11 @@ class Property(BaseModel):
 
     # Info
     star_rating: Optional[float] = None
-    listing_price: Optional[float] = None
-    sale_price: Optional[float] = None
+    listing_price: Optional[Decimal] = None
+    sale_price: Optional[Decimal] = None
     check_in_time: Optional[str] = None
     checkout_time: Optional[str] = None
-
+    food_options: Optional[List[FoodOption]] = None
     # Files and Media
     cover_image: Optional[str] = None
     feature_image: Optional[str] = None
@@ -52,7 +60,7 @@ class Property(BaseModel):
     amenities: Optional[List[Amenity]] = None
     facilities: Optional[List[Facility]] = None
     rooms: Optional[List[Room]] = None
-
+   
     # Tax
     tax_name: Optional[str] = None
     tax_percentage: Optional[float] = None
@@ -64,3 +72,6 @@ class Property(BaseModel):
     updated_by: Optional[str] = None
 
     
+
+class PropertySchema(Property):
+    id: str

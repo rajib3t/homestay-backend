@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 from bson import ObjectId
 from app.application.dto.attribute import AmenityQuery
@@ -16,7 +17,7 @@ class AmenityResponseBuilder:
             raise ValueError("image_service is required")
         self.image_service = image_service
 
-    async def amenity(self, amenity_data: dict) -> dict | None:
+    async def amenity(self, amenity_data: dict) -> Optional[dict]:
         if not amenity_data:   # check 1
             return None
        

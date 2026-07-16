@@ -13,3 +13,4 @@ class BaseUseCase(ABC):
     async def build_response(self, *args, **kwargs):
         pass
 
+    

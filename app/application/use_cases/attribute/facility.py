@@ -1,5 +1,6 @@
 from copy import deepcopy
 import re
+from typing import Optional
 
 from bson import ObjectId
 
@@ -17,7 +18,7 @@ class FacilityResponseBuilder:
             raise ValueError("image_service is required")
         self.image_service = image_service
 
-    async def facility(self, facility_data: dict) -> dict | None:
+    async def facility(self, facility_data: dict) -> Optional[dict]:
         if not facility_data:   # check 1
             return None
        

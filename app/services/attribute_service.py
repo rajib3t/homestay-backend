@@ -429,7 +429,7 @@ class AttributeService(BaseService):
     
 
 
-    def _build_query_filters(self, search: dict | None) -> dict:
+    def _build_query_filters(self, search: Optional[dict]) -> dict:
 
         query = {}
 

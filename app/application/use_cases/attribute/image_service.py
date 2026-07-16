@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ class AttributeImageService:
               self, 
               icon_data: str, 
               path: str,
-              folder: str | None = None
+              folder: Optional[str] = None
               ) -> str:
         if not icon_data or not self.storage_service:
             return None

@@ -1,7 +1,7 @@
 """Authentication and security dependencies."""
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.security import JWTHandler
@@ -19,9 +19,9 @@ class CurrentUser:
 
 
 def _extract_token(
-    credentials: HTTPAuthorizationCredentials | None,
+    credentials: Optional[HTTPAuthorizationCredentials],
     request: Request,
-) -> str | None:
+) -> Optional[str]:
     if credentials:
         return credentials.credentials
 
@@ -30,7 +30,7 @@ def _extract_token(
 
 def get_current_user(
         request: Request,
-        credentials: HTTPAuthorizationCredentials | None = Depends(security),
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     ) -> CurrentUser:
     """Dependency that returns the current user from an access token.
 

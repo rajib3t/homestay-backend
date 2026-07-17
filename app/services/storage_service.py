@@ -47,6 +47,67 @@ class StorageService:
             await client.put_object(**kwargs)
         return key
 
+    async def upload_file_like(self, key: str, file_like, content_type: Optional[str] = None) -> str:
+        """Upload file-like object using streaming multipart upload.
+        
+        This method streams the file in chunks without loading it entirely into memory,
+        making it suitable for large files like videos.
+        """
+        upload_id = None
+        async with self.session.client("s3", **self.client_params) as client:
+            try:
+                # Initialize multipart upload
+                create_kwargs = {"Bucket": self.bucket, "Key": key}
+                if content_type:
+                    create_kwargs["ContentType"] = content_type
+                
+                response = await client.create_multipart_upload(**create_kwargs)
+                upload_id = response["UploadId"]
+                
+                # Upload parts in streaming fashion
+                parts = []
+                part_number = 1
+                
+                while True:
+                    chunk = await file_like.read(PART_SIZE)
+                    if not chunk:
+                        break
+                    
+                    part_response = await client.upload_part(
+                        Bucket=self.bucket,
+                        Key=key,
+                        PartNumber=part_number,
+                        UploadId=upload_id,
+                        Body=chunk
+                    )
+                    parts.append({
+                        "PartNumber": part_number,
+                        "ETag": part_response["ETag"]
+                    })
+                    part_number += 1
+                
+                # Complete multipart upload
+                await client.complete_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": parts}
+                )
+                return key
+                
+            except Exception as exc:
+                # Abort multipart upload on error
+                if upload_id:
+                    try:
+                        await client.abort_multipart_upload(
+                            Bucket=self.bucket,
+                            Key=key,
+                            UploadId=upload_id
+                        )
+                    except Exception:
+                        pass  # Ignore abort errors
+                raise AppException(f"Streaming upload failed: {exc}") from exc
+
     async def _upload_multipart(self, key: str, data: bytes, content_type: Optional[str] = None) -> str:
         """Upload large files using multipart upload to prevent timeouts."""
         upload_id = None

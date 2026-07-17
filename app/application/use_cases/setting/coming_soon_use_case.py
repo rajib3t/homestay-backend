@@ -91,11 +91,12 @@ class PostComingSoonSettingUseCase(BaseUseCase):
         return hasattr(value, "read") and hasattr(value, "content_type")
 
     async def _upload_file(self, upload, *, folder: str, field_name: str) -> str:
-        raw = await upload.read()
         mime_type = upload.content_type or mimetypes.guess_type(upload.filename or "")[0]
         extension = mimetypes.guess_extension(mime_type or "") or ""
         key = f"{folder}/{field_name}_{uuid4().hex}{extension}"
-        return await self.storage_service.upload_bytes(key, raw, content_type=mime_type)
+        
+        # Use streaming upload to avoid loading entire file into memory
+        return await self.storage_service.upload_file_like(key, upload, content_type=mime_type)
 
     async def _delete_replaced_file(self, old_value, new_value):
         if isinstance(old_value, str) and old_value and old_value != new_value:

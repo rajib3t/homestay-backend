@@ -62,6 +62,18 @@ def add_direct_connection(uri: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
 
 
+def strip_replica_set_options(uri: str) -> str:
+    """Remove replica-set-specific options for standalone fallback connections."""
+    if not uri:
+        return uri
+
+    parsed = urlsplit(uri)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.pop("replicaSet", None)
+    query.pop("directConnection", None)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
 async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
     """Attempt to connect to MongoDB with a small retry/backoff strategy.
 
@@ -86,7 +98,9 @@ async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
 
             if not settings.MONGO_DIRECT_CONNECTION:
                 try:
-                    fallback_uri = add_direct_connection(normalize_mongo_uri(settings.MONGO_URI))
+                    fallback_uri = strip_replica_set_options(
+                        add_direct_connection(normalize_mongo_uri(settings.MONGO_URI))
+                    )
                     logger.info("Retrying MongoDB connection with directConnection=true")
                     db.client = AsyncIOMotorClient(fallback_uri, serverSelectionTimeoutMS=5000)
                     await db.client.admin.command("ping")

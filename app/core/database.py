@@ -84,10 +84,8 @@ async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
         try:
             logger.debug("Connecting to MongoDB (attempt %d)", attempt)
             # Set a server selection timeout to fail faster if unreachable
-            mongo_uri = normalize_mongo_uri(settings.MONGO_URI)
-            if settings.MONGO_DIRECT_CONNECTION:
-                mongo_uri = add_direct_connection(mongo_uri)
-            db.client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
+           
+            db.client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
             # Verify the connection by pinging the server
             await db.client.admin.command("ping")
             logger.info("Connected to MongoDB successfully")

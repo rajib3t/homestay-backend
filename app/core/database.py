@@ -1,6 +1,7 @@
 from typing import Optional
 import asyncio
 import logging
+from urllib.parse import quote_plus, urlsplit, urlunsplit
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
@@ -15,6 +16,37 @@ class MongoDB:
 db = MongoDB()
 
 
+def normalize_mongo_uri(uri: str) -> str:
+    """Escape MongoDB username/password credentials when needed.
+
+    Motor/PyMongo expects reserved characters in the userinfo portion of the URI
+    to be percent-encoded. This keeps already-valid URIs intact and only rewrites
+    the credentials segment when present.
+    """
+    if not uri:
+        return uri
+
+    parsed = urlsplit(uri)
+    if not parsed.username and not parsed.password:
+        return uri
+
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+
+    if parsed.username is not None:
+        username = quote_plus(parsed.username)
+        if parsed.password is not None:
+            password = quote_plus(parsed.password)
+            netloc = f"{username}:{password}@{host}"
+        else:
+            netloc = f"{username}@{host}"
+    else:
+        netloc = host
+
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+
 async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
     """Attempt to connect to MongoDB with a small retry/backoff strategy.
 
@@ -25,7 +57,8 @@ async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
         try:
             logger.debug("Connecting to MongoDB (attempt %d)", attempt)
             # Set a server selection timeout to fail faster if unreachable
-            db.client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
+            mongo_uri = normalize_mongo_uri(settings.MONGO_URI)
+            db.client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
             # Verify the connection by pinging the server
             await db.client.admin.command("ping")
             logger.info("Connected to MongoDB successfully")

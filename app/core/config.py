@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ADMIN_USER_USERNAME: Optional[str] = None
+    ADMIN_USER_EMAIL: Optional[str] = None
+    ADMIN_USER_PASSWORD: Optional[str] = None
+    ADMIN_USER_FIRST_NAME: str = "Admin"
+    ADMIN_USER_LAST_NAME: str = "User"
+    ADMIN_USER_MOBILE: Optional[str] = None
 
     # Environment
     ENV: str = "development"  # production | staging | development

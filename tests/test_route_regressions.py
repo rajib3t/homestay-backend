@@ -1,5 +1,7 @@
 import pytest
+from fastapi import HTTPException
 
+from app.api.app_setting_route import AppSettingController
 from app.api.attribute_route import (
     update_amenity_status,
     update_facility_status,
@@ -60,6 +62,20 @@ class StubAttributeService:
         raise AssertionError("toggle_room_type_status should not be called")
 
 
+class FakeUploadFile:
+    def __init__(self, content_type: str):
+        self.content_type = content_type
+
+
+class StubComingSoonUseCase:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, data):
+        self.calls.append(data)
+        return {"saved": True}
+
+
 @pytest.mark.asyncio
 async def test_get_country_route_uses_single_argument_service_signature():
     service = StubLocationService()
@@ -113,3 +129,61 @@ def test_refresh_response_accepts_rotated_refresh_token():
 
     assert response.data.access_token == "access-token"
     assert response.data.refresh_token == "refresh-token"
+
+
+@pytest.mark.asyncio
+async def test_coming_soon_setting_rejects_invalid_image_type():
+    controller = AppSettingController()
+    use_case = StubComingSoonUseCase()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await controller.post_coming_soon_setting(
+            background_image_url=FakeUploadFile("text/plain"),
+            video_url=None,
+            launch_date="2026-07-17",
+            use_case=use_case,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Background image must be a valid image file"
+    assert use_case.calls == []
+
+
+@pytest.mark.asyncio
+async def test_coming_soon_setting_rejects_invalid_video_type():
+    controller = AppSettingController()
+    use_case = StubComingSoonUseCase()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await controller.post_coming_soon_setting(
+            background_image_url=FakeUploadFile("image/png"),
+            video_url=FakeUploadFile("application/pdf"),
+            launch_date="2026-07-17",
+            use_case=use_case,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Video must be a valid video file"
+    assert use_case.calls == []
+
+
+@pytest.mark.asyncio
+async def test_coming_soon_setting_accepts_valid_media_types():
+    controller = AppSettingController()
+    use_case = StubComingSoonUseCase()
+
+    response = await controller.post_coming_soon_setting(
+        background_image_url=FakeUploadFile("image/png"),
+        video_url=FakeUploadFile("video/mp4"),
+        launch_date="2026-07-17",
+        use_case=use_case,
+    )
+
+    assert response["data"] == {"saved": True}
+    assert use_case.calls == [
+        {
+            "background_image_url": use_case.calls[0]["background_image_url"],
+            "video_url": use_case.calls[0]["video_url"],
+            "launch_date": "2026-07-17",
+        }
+    ]

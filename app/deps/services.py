@@ -79,6 +79,14 @@ def get_token_service(db=Depends(get_database)):
     return TokenService(TokenRepository(db), db=db)
 
 
+async def get_coming_soon_setting_service(db=Depends(get_database)):
+    """Get the coming soon setting service."""
+    from app.repositories.coming_soon_setting_repository import ComingSoonSettingRepository
+    from app.services.coming_soon_setting_service import ComingSoonSettingService
+
+    coming_soon_repo = ComingSoonSettingRepository(db)
+    return ComingSoonSettingService(coming_soon_repo)
+
 def get_email_service():
     """Get the email service based on configured provider."""
     from app.services.email_service import (

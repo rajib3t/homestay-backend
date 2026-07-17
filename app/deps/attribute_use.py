@@ -4,7 +4,7 @@ from fastapi import Depends
 from app.application.use_cases.attribute.amenity  import CreateAmenityUseCase, GetAmenitiesUseCase, GetAmenityUseCase, UpdateAmenityUseCase
 from app.application.use_cases.attribute.bed_type import CreateBedTypeUseCase, GetBedTypeUseCase, GetBedTypesUseCase, UpdateBedTypeUseCase
 from app.application.use_cases.attribute.facility import CreateFacilityUseCase, GetFacilitiesUseCase, GetFacilityUseCase, UpdateFacilityUseCase
-from app.deps.auth import get_current_user
+from app.deps.auth import CurrentUser, get_current_user, require_admin
 from app.deps.services import get_attribute_service, get_storage_service
 from app.deps.uow import get_uow
 
@@ -14,7 +14,7 @@ from app.deps.uow import get_uow
 def get_create_amenity_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return CreateAmenityUseCase(
@@ -28,7 +28,7 @@ def get_create_amenity_use_case(
 def get_list_amenities_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return GetAmenitiesUseCase(
@@ -42,7 +42,7 @@ def get_list_amenities_use_case(
 def get_single_amenity_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return GetAmenityUseCase(
@@ -55,7 +55,7 @@ def get_single_amenity_use_case(
 def get_single_amenity_update_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return UpdateAmenityUseCase(
@@ -70,7 +70,7 @@ def get_single_amenity_update_use_case(
 def get_create_facility_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return CreateFacilityUseCase(
@@ -83,7 +83,7 @@ def get_create_facility_use_case(
 def get_list_facilities_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return GetFacilitiesUseCase(
@@ -96,7 +96,7 @@ def get_list_facilities_use_case(
 def get_single_facility_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     # This function can be implemented similarly to get_single_amenity_use_case when the GetFacilityUseCase is defined
@@ -111,7 +111,7 @@ def get_single_facility_use_case(
 def get_single_facility_update_use_case(
     service=Depends(get_attribute_service),
     storage_service=Depends(get_storage_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     # This function can be implemented similarly to get_single_amenity_update_use_case when the UpdateFacilityUseCase is defined
@@ -125,7 +125,7 @@ def get_single_facility_update_use_case(
 
 def get_create_bed_type_use_case(
     service=Depends(get_attribute_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     return CreateBedTypeUseCase(
@@ -136,7 +136,7 @@ def get_create_bed_type_use_case(
 
 def get_list_bed_types_use_case(
     service=Depends(get_attribute_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     # This function can be implemented similarly to get_list_amenities_use_case when the GetBedTypesUseCase is defined
@@ -148,7 +148,7 @@ def get_list_bed_types_use_case(
 
 def get_single_bed_type_use_case(
     service=Depends(get_attribute_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     # This function can be implemented similarly to get_single_amenity_use_case when the GetBedTypeUseCase is defined
@@ -161,7 +161,7 @@ def get_single_bed_type_use_case(
 
 def get_single_bed_type_update_use_case(
     service=Depends(get_attribute_service),
-    current_user=Depends(get_current_user),
+    current_user : CurrentUser=Depends(require_admin),
     uow=Depends(get_uow)
 ):
     # This function can be implemented similarly to get_single_amenity_update_use_case when the UpdateBedTypeUseCase is defined

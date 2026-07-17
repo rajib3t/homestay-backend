@@ -40,4 +40,7 @@ class GetPropertyUseCase(BaseUseCase):
             
             if result.get("cover_image"):
                 result["cover_image"] = self.storage_service.generate_presigned_url(result["cover_image"])
+
+            if result.get("trade_license"):
+                result["trade_license"] = self.storage_service.generate_presigned_url(result["trade_license"])
             return result

@@ -35,10 +35,11 @@ class GetAppSettingUseCase(BaseUseCase):
 
 
 class PostAppSettingUseCase(BaseUseCase):
-    def __init__(self, service, storage_service, uow):
+    def __init__(self, service, storage_service, current_user, uow):
         self.service = service
         self.uow = uow
         self.image_service = BrandImageService(storage_service)
+        self.current_user = current_user
         self.response_builder = AppSettingResponseBuilder(self.image_service)
 
     async def execute(self, data: AppSetting):

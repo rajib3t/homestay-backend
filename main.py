@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
@@ -81,8 +82,32 @@ class Application:
             logger.exception("Shutdown failure")
 
     def _register_middleware(self):
-        # Authentication is enforced with `get_current_user` dependencies.
-        return None
+        logger = logging.getLogger(__name__)
+        # Register rate limit headers middleware
+        # if settings.RATE_LIMIT_ENABLED:
+        #     self.app.add_middleware(RateLimitMiddleware)
+        
+        # Register TrustedHostMiddleware using parsed allowed hosts from settings
+        # try:
+        #     from starlette.middleware.trustedhost import TrustedHostMiddleware
+        #     hosts = settings.allowed_hosts
+        #     if hosts:
+        #         self.app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
+        # except Exception:
+        #     # If middleware cannot be registered, continue without crashing startup
+        #     pass
+        cors_origins = settings.cors_allowed_origins
+        if not cors_origins and settings.DEBUG:
+            cors_origins = ["*"]
+
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
 
     def _register_exception_handlers(self):
         @self.app.exception_handler(AppException)

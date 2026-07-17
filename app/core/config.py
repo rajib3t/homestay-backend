@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     # Default File Upload Settings
     MAX_FILE_SIZE_MB: int = 5  # Maximum file size in MB
     ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
+    CORS_ALLOWED_ORIGINS: Optional[str] = None
+
+    @property
+    def cors_allowed_origins(self) -> List[str]:
+        if not self.CORS_ALLOWED_ORIGINS:
+            return ["http://localhost:3000", "http://localhost:5173"]
+        return [origin.strip() for origin in self.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

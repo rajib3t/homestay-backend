@@ -1,9 +1,10 @@
 from typing import Optional
 import asyncio
 import logging
-from urllib.parse import quote_plus, urlsplit, urlunsplit
+from urllib.parse import quote_plus, urlsplit, urlunsplit, parse_qsl, urlencode
 
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import ServerSelectionTimeoutError
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,20 @@ def normalize_mongo_uri(uri: str) -> str:
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
+def add_direct_connection(uri: str) -> str:
+    """Append directConnection=true to a MongoDB URI if it's not already set."""
+    if not uri:
+        return uri
+
+    parsed = urlsplit(uri)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    if query.get("directConnection", "").lower() == "true":
+        return uri
+
+    query["directConnection"] = "true"
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
 async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
     """Attempt to connect to MongoDB with a small retry/backoff strategy.
 
@@ -58,11 +73,28 @@ async def connect_to_mongo(retries: int = 3, backoff_factor: float = 0.5):
             logger.debug("Connecting to MongoDB (attempt %d)", attempt)
             # Set a server selection timeout to fail faster if unreachable
             mongo_uri = normalize_mongo_uri(settings.MONGO_URI)
+            if settings.MONGO_DIRECT_CONNECTION:
+                mongo_uri = add_direct_connection(mongo_uri)
             db.client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
             # Verify the connection by pinging the server
             await db.client.admin.command("ping")
             logger.info("Connected to MongoDB successfully")
             return
+        except ServerSelectionTimeoutError as e:
+            last_exc = e
+            logger.warning("MongoDB connection attempt %d failed: %s", attempt, e)
+
+            if not settings.MONGO_DIRECT_CONNECTION:
+                try:
+                    fallback_uri = add_direct_connection(normalize_mongo_uri(settings.MONGO_URI))
+                    logger.info("Retrying MongoDB connection with directConnection=true")
+                    db.client = AsyncIOMotorClient(fallback_uri, serverSelectionTimeoutMS=5000)
+                    await db.client.admin.command("ping")
+                    logger.info("Connected to MongoDB successfully using direct connection fallback")
+                    return
+                except Exception as fallback_exc:
+                    last_exc = fallback_exc
+                    logger.warning("Direct connection fallback failed: %s", fallback_exc)
         except Exception as e:
             last_exc = e
             logger.warning("MongoDB connection attempt %d failed: %s", attempt, e)

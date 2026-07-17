@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
     SECURE_COOKIES: bool = False
+    MONGO_DIRECT_CONNECTION: bool = False
 
     # Email Settings (Multiple Providers Supported)
     EMAIL_PROVIDER: str = "mock" # options: "mock", "smtp", "mailgun", "brevo"

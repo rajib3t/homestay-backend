@@ -15,5 +15,5 @@ class AppSetting(BaseModel):
     app_time_format: str
 
 class AppSettingResponse(BaseResponse):
-    data:AppSetting
+    data:Optional[AppSetting] = None
 

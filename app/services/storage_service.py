@@ -8,6 +8,9 @@ from app.core.config import settings
 from app.core.exceptions import AppException
 from app.utils.file_validation import validate_data_url_file
 
+MULTIPART_THRESHOLD = 20 * 1024 * 1024  # 20 MB
+PART_SIZE = 8 * 1024 * 1024  # 8 MB per part
+
 
 class StorageService:
     """Simple S3-compatible storage service supporting AWS S3 and MinIO via endpoint URL.
@@ -29,13 +32,76 @@ class StorageService:
             self.client_params["use_ssl"] = settings.S3_USE_SSL
 
     async def upload_bytes(self, key: str, data: bytes, content_type: Optional[str] = None) -> str:
-        """Upload raw bytes to S3 and return object key."""
+        """Upload raw bytes to S3 and return object key.
+        
+        Uses multipart upload for files larger than MULTIPART_THRESHOLD (20 MB)
+        to prevent timeouts and improve reliability.
+        """
+        if len(data) >= MULTIPART_THRESHOLD:
+            return await self._upload_multipart(key, data, content_type)
+        
         async with self.session.client("s3", **self.client_params) as client:
             kwargs = {"Bucket": self.bucket, "Key": key, "Body": data}
             if content_type:
                 kwargs["ContentType"] = content_type
             await client.put_object(**kwargs)
         return key
+
+    async def _upload_multipart(self, key: str, data: bytes, content_type: Optional[str] = None) -> str:
+        """Upload large files using multipart upload to prevent timeouts."""
+        upload_id = None
+        async with self.session.client("s3", **self.client_params) as client:
+            try:
+                # Initialize multipart upload
+                create_kwargs = {"Bucket": self.bucket, "Key": key}
+                if content_type:
+                    create_kwargs["ContentType"] = content_type
+                
+                response = await client.create_multipart_upload(**create_kwargs)
+                upload_id = response["UploadId"]
+                
+                # Upload parts
+                parts = []
+                part_number = 1
+                offset = 0
+                
+                while offset < len(data):
+                    chunk = data[offset:offset + PART_SIZE]
+                    part_response = await client.upload_part(
+                        Bucket=self.bucket,
+                        Key=key,
+                        PartNumber=part_number,
+                        UploadId=upload_id,
+                        Body=chunk
+                    )
+                    parts.append({
+                        "PartNumber": part_number,
+                        "ETag": part_response["ETag"]
+                    })
+                    offset += PART_SIZE
+                    part_number += 1
+                
+                # Complete multipart upload
+                await client.complete_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": parts}
+                )
+                return key
+                
+            except Exception as exc:
+                # Abort multipart upload on error
+                if upload_id:
+                    try:
+                        await client.abort_multipart_upload(
+                            Bucket=self.bucket,
+                            Key=key,
+                            UploadId=upload_id
+                        )
+                    except Exception:
+                        pass  # Ignore abort errors
+                raise AppException(f"Multipart upload failed: {exc}") from exc
 
     async def delete_object(self, key: str) -> bool:
         async with self.session.client("s3", **self.client_params) as client:
